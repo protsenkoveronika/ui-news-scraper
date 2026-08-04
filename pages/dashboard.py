@@ -48,13 +48,6 @@ st.markdown("""
         align-items: flex-start !important;
     }
 
-    /* Applied multiselect filter chips (Company/Industry/Tier): Streamlit's
-       default tag color is a red/pink accent — switched to the app's blue
-       accent used everywhere else (expander border, hover states, etc). */
-    div[data-testid="stMultiSelect"] span[data-baseweb="tag"] {
-        background-color: #3b82f6 !important;
-    }
-
     /* Each card row is wrapped in a keyed container ("st-key-dash_card_row_")
        so the Details button lines up along the bottom of the row instead of
        trailing right after each card's (variably long) summary text —

@@ -3,7 +3,7 @@ from datetime import datetime
 import streamlit as st
 
 from shared import (
-    inject_css, load_industry_digest, parse_highlights, render_page_switcher,
+    inject_css, load_industry_digest, parse_highlights, parse_trends, render_page_switcher,
     industry_color, sentiment_status, sentiment_badge_html,
 )
 
@@ -123,7 +123,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ======================================================================
 # INDUSTRY CARDS for the selected week
 # ======================================================================
-CARD_COLUMNS = 2
+CARD_COLUMNS = 1
 week_rows_sorted = sorted(week_rows, key=lambda r: r["industry"])
 
 with st.container(key="industry_cards_grid"):
@@ -139,14 +139,31 @@ with st.container(key="industry_cards_grid"):
                     "<ul class='industry-highlights'>" + "".join(f"<li>{h}</li>" for h in highlights) + "</ul>"
                     if highlights else ""
                 )
+                trends = parse_trends(row.get("trends"))
+                trend_icon = {"up": "▲", "down": "▼", "neutral": "●"}
+                trends_html = (
+                    "<div class='industry-trends'>" + "".join(
+                        f'<span class="trend-pill">'
+                        f'<span class="trend-icon trend-{t["direction"]}">{trend_icon[t["direction"]]}</span> '
+                        f'{t["label"]}</span>'
+                        for t in trends
+                    ) + "</div>"
+                    if trends else ""
+                )
                 st.markdown(
                     f'<div class="industry-card" style="border-left-color:{color};">'
                     f'<div class="industry-name">{row["industry"]}</div>'
                     f'<div class="industry-meta">{row["article_count"]} articles this week</div>'
+                    f'<div class="industry-score-row">'
                     f'{sentiment_badge_html(row["sentiment_label"])}'
                     f'<span class="industry-score">{row["sentiment_score"]:+.2f}</span>'
-                    f'<div class="industry-summary" style="margin-top:10px;">{row.get("summary") or "No summary generated."}</div>'
+                    f'</div>'
+                    f'{trends_html}'
+                    f'<details class="industry-details">'
+                    f'<summary>Summary &amp; highlights</summary>'
+                    f'<div class="industry-summary">{row.get("summary") or "No summary generated."}</div>'
                     f'{highlights_html}'
+                    f'</details>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )

@@ -87,11 +87,12 @@ def sentiment_status(label):
 
 
 def sentiment_badge_html(label):
-    """Status-coded sentiment badge: icon + label together, never color alone."""
+    """Status-coded sentiment badge: color + text label (label word itself
+    conveys status, so no icon is needed alongside it)."""
     s = sentiment_status(label)
     return (
         f'<span style="color:{s["color"]}; font-weight:700; font-size:0.8rem; '
-        f'letter-spacing:0.02em;">{s["icon"]} {s["label"].upper()}</span>'
+        f'letter-spacing:0.02em;">{s["label"].upper()}</span>'
     )
 
 
@@ -127,6 +128,31 @@ GLOBAL_CSS = """
     /* Completely hide Streamlit's default header spacing bar */
     header[data-testid="stHeader"] {
         display: none !important;
+    }
+
+    /* Selectbox/combobox focus ring: Streamlit's default is a red border
+       (via a data-focus-within attribute Streamlit sets on the widget's
+       wrapper, styled by a hashed/unstable class) — overridden with the
+       app's blue accent using a stable data-testid selector instead. */
+    div[data-testid="stSelectbox"] div[role="group"][data-focus-within] {
+        border-color: #3b82f6 !important;
+    }
+
+    /* Applied multiselect filter chips (Company/Industry/Tier, wherever they
+       appear): Streamlit's default tag color is a red/pink accent — switched
+       to the app's blue accent used everywhere else. The active/focused
+       border uses Streamlit's deterministic atomic utility classes
+       (.st-d0/.st-d1/.st-d2/.st-d3 = left/right/top/bottom border-color),
+       also red by default — overridden directly since the trigger state is
+       internal to the widget rather than a plain CSS :focus pseudo-class. */
+    div[data-testid="stMultiSelect"] span[data-baseweb="tag"] {
+        background-color: #3b82f6 !important;
+    }
+    div[data-testid="stMultiSelect"] .st-d0,
+    div[data-testid="stMultiSelect"] .st-d1,
+    div[data-testid="stMultiSelect"] .st-d2,
+    div[data-testid="stMultiSelect"] .st-d3 {
+        border-color: #3b82f6 !important;
     }
 
     /* Hide the default sidebar page navigation — the app renders its own
@@ -574,6 +600,10 @@ GLOBAL_CSS = """
         font-size: 0.78rem;
         margin: 4px 0 12px 0;
     }
+    .industry-card .industry-score-row {
+        display: flex;
+        align-items: center;
+    }
     .industry-card .industry-score {
         color: #9ca3af;
         font-size: 0.8rem;
@@ -593,6 +623,49 @@ GLOBAL_CSS = """
         color: #a1a8b4;
         font-size: 0.84rem;
         line-height: 1.7;
+    }
+    .industry-card .industry-trends {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 10px 0 10px 0;
+    }
+    .industry-card .trend-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.76rem;
+        font-weight: 600;
+        padding: 2px 9px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #d1d5db;
+    }
+    .industry-card .trend-icon.trend-up { color: #0ca30c; }
+    .industry-card .trend-icon.trend-down { color: #d03b3b; }
+    .industry-card .trend-icon.trend-neutral { color: #9ca3af; }
+    .industry-card .industry-details {
+        margin-top: 10px;
+    }
+    .industry-card .industry-details summary {
+        color: #9ca3af;
+        font-size: 0.74rem;
+        font-weight: 600;
+        cursor: pointer;
+        list-style: none;
+    }
+    .industry-card .industry-details summary::-webkit-details-marker {
+        display: none;
+    }
+    .industry-card .industry-details summary::before {
+        content: "▸ ";
+    }
+    .industry-card .industry-details[open] summary::before {
+        content: "▾ ";
+    }
+    .industry-card .industry-details .industry-summary {
+        margin-top: 10px !important;
     }
 
     /* ======================================================================
@@ -841,9 +914,33 @@ def load_news():
         st.stop()
 
 
+# Every article ever recorded, no date filter — the "All time" option
+# alongside the CUTOFF_TIMESPAN-windowed load_news().
+@st.cache_data(ttl=CACHE_TIMEOUT)
+def fetch_all_news_from_supabase():
+    supabase = init_supabase()
+    response = (
+        supabase.table("news")
+        .select("*")
+        .order("pub_date", desc=True)
+        .execute()
+    )
+    return response.data
+
+
+def load_all_news():
+    """Fetch every recorded article, stopping the page with an error message
+    if Supabase fails."""
+    try:
+        return fetch_all_news_from_supabase()
+    except Exception as e:
+        st.error(f"Supabase connection failed: {e}")
+        st.stop()
+
+
 # Fetch the current calendar week's articles (Monday 00:00 UTC through now),
-# for the Weekly Scores table. Cached separately from the 72-hour rolling
-# window used everywhere else since the two windows rarely match.
+# for the Weekly Scores table. Cached separately from the CUTOFF_TIMESPAN
+# rolling window used everywhere else since the two windows rarely match.
 @st.cache_data(ttl=CACHE_TIMEOUT)
 def fetch_week_news_from_supabase():
     supabase = init_supabase()
@@ -962,6 +1059,24 @@ def parse_highlights(raw):
     return highlights
 
 
+def parse_trends(raw):
+    """Normalize the `trends` jsonb column — a list of "+ Label"/"- Label"
+    strings — into a list of {direction, label} dicts, stripping the sign
+    prefix. A bare label with no +/- prefix is treated as neutral."""
+    trends = []
+    for item in parse_highlights(raw):
+        text = str(item).strip()
+        if text.startswith("+"):
+            direction, label = "up", text[1:].strip()
+        elif text.startswith("-"):
+            direction, label = "down", text[1:].strip()
+        else:
+            direction, label = "neutral", text
+        if label:
+            trends.append({"direction": direction, "label": label})
+    return trends
+
+
 # Fetch every recorded client alert, newest first per client. Small table by
 # nature (one row per client per alert run), so no time-window filter needed.
 @st.cache_data(ttl=CACHE_TIMEOUT)
@@ -976,14 +1091,61 @@ def fetch_client_alerts_from_supabase():
     return response.data
 
 
-def load_client_alerts():
-    """Fetch client alerts, stopping the page with an error message if
-    Supabase fails."""
+# `client_alerts.client_id` now stores a pseudonym code (e.g. "CL-0004")
+# instead of the plain company name, mapped via a local (untracked, hence
+# ".local.json") file that only pairs a slug with a code — not the exact
+# display name/casing used elsewhere in the app. The real display name is
+# recovered by cross-referencing that slug against `news.company` (already
+# fetched, unpseudonymized), matched by stripping both down to the same
+# lowercase-alphanumeric form.
+CLIENT_PSEUDONYM_FILE = Path(__file__).parent / "client_pseudonyms.local.json"
+
+
+def _slugify_company_name(name):
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+@st.cache_data(ttl=CACHE_TIMEOUT)
+def load_client_pseudonym_map():
+    """Map each pseudonym code to the real company display name. Falls back
+    to the code itself if the mapping file is missing/unreadable, and to the
+    raw slug (upper-cased) if a code's company isn't found in `news` yet."""
     try:
-        return fetch_client_alerts_from_supabase()
+        with open(CLIENT_PSEUDONYM_FILE, "r", encoding="utf-8") as f:
+            slug_to_code = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    try:
+        companies = fetch_all_companies_from_supabase()
+    except Exception:
+        companies = []
+    slug_to_company = {_slugify_company_name(c): c for c in companies}
+
+    return {
+        code: slug_to_company.get(slug, slug.upper())
+        for slug, code in slug_to_code.items()
+    }
+
+
+def _decode_client_alert_row(row, pseudonym_map):
+    if "client" not in row and "client_id" in row:
+        code = row["client_id"]
+        row = {**row, "client": pseudonym_map.get(code, code)}
+    return row
+
+
+def load_client_alerts():
+    """Fetch client alerts, decoding the pseudonymized client_id into the
+    real company name (as `client`, for compatibility with the rest of the
+    app), stopping the page with an error message if Supabase fails."""
+    try:
+        rows = fetch_client_alerts_from_supabase()
     except Exception as e:
         st.error(f"Supabase connection failed: {e}")
         st.stop()
+    pseudonym_map = load_client_pseudonym_map()
+    return [_decode_client_alert_row(row, pseudonym_map) for row in rows]
 
 
 # One representative logo per company, sourced from the `news` table (whose

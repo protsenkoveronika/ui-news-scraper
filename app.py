@@ -1,6 +1,6 @@
 import streamlit as st
 
-from shared import inject_css, load_news, format_pub_date, title_with_sources_html, render_page_switcher, sort_articles, FALLBACK_IMAGE
+from shared import inject_css, load_all_news, load_news, format_pub_date, title_with_sources_html, render_page_switcher, sort_articles, tier_number, FALLBACK_IMAGE
 
 st.set_page_config(page_title="News Radar", page_icon="🚀", layout="centered")
 inject_css()
@@ -91,26 +91,17 @@ st.markdown("""
         vertical-align: middle;
     }
 
-    /* Compact horizontal radio for the sort control, aligned to the right */
-    div[data-testid="stRadio"] label p {
-        color: #d1d5db !important;
-        font-size: 0.85rem !important;
+    /* "All time" checkbox: its container is width: fit-content by default,
+       sitting flush left in its (wider, fractional) column and leaving a
+       dead gap to the right — margin-left: auto pushes it to the column's
+       right edge instead. Checked state forced to the app's blue accent
+       instead of Streamlit's default red fill. */
+    .st-key-news_all_time {
+        margin-left: auto !important;
     }
-    div[data-testid="stRadio"] div[role="radiogroup"] {
-        justify-content: flex-end !important;
-    }
-    /* Selected radio dot: blue instead of Streamlit's default red.
-       :first-child is required — the same nesting level also holds the
-       label's text container as a sibling div, and a bare "> div > div"
-       matches both, painting the text's background blue too. */
-    div[data-testid="stRadio"] label[data-testid="stRadioOption"]:has(input:checked) > div:nth-child(2) > div > div:first-child {
+    div[data-testid="stCheckbox"] label[data-selected="true"] > div:first-of-type {
         background-color: #3b82f6 !important;
         border-color: #3b82f6 !important;
-    }
-    /* Push the sort control's container to the right edge of its column */
-    .st-key-news_sort {
-        margin-left: auto !important;
-        width: auto !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -120,28 +111,55 @@ render_page_switcher("app.py")
 
 st.title("All News")
 
-news_data = load_news()
+# ======================================================================
+# FILTERS
+# ======================================================================
+filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+count_col, all_time_col = st.columns([5, 1])
 
-if not news_data:
-    st.warning("No new articles found from today or yesterday.")
-    st.stop()
-
-count_col, sort_col = st.columns([3, 2])
-with count_col:
-    st.markdown(
-        f"<p style='color: #9ca3af; font-size: 0.9rem; margin-top: 8px;'>{len(news_data)} articles from the last 3 days</p>",
-        unsafe_allow_html=True
-    )
-with sort_col:
-    sort_option = st.radio(
+with filter_col4:
+    sort_option = st.selectbox(
         "Sort by",
         ["Newest first", "Top tier first", "Most relevant"],
-        horizontal=True,
-        label_visibility="collapsed",
         key="news_sort",
     )
+with all_time_col:
+    all_time = st.checkbox("All time", key="news_all_time")
 
+news_data = load_all_news() if all_time else load_news()
+
+if not news_data:
+    st.warning("No articles found.")
+    st.stop()
+
+all_companies = sorted({a.get("company") for a in news_data if a.get("company")})
+all_industries = sorted({a.get("industry") for a in news_data if a.get("industry")})
+all_tiers = sorted({a.get("tier") for a in news_data if a.get("tier")}, key=lambda t: tier_number({"tier": t}))
+
+with filter_col1:
+    company_filter = st.multiselect("Company", all_companies, key="news_company_filter")
+with filter_col2:
+    industry_filter = st.multiselect("Industry", all_industries, key="news_industry_filter")
+with filter_col3:
+    tier_filter = st.multiselect("Tier", all_tiers, key="news_tier_filter")
+
+news_data = [
+    a for a in news_data
+    if (not company_filter or a.get("company") in company_filter)
+    and (not industry_filter or a.get("industry") in industry_filter)
+    and (not tier_filter or a.get("tier") in tier_filter)
+]
+
+range_label = "all time" if all_time else "the last 7 days"
+with count_col:
+    st.markdown(
+        f"<p style='color: #9ca3af; font-size: 0.9rem; margin-top: 8px;'>Showing {len(news_data)} articles from {range_label}</p>",
+        unsafe_allow_html=True
+    )
 news_data = sort_articles(news_data, sort_option)
+
+if not news_data:
+    st.info("No articles match the current filters.")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
