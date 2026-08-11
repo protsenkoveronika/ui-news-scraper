@@ -24,14 +24,16 @@ def seargin_logo_data_uri():
     data = SEARGIN_LOGO_PATH.read_bytes()
     return f"data:image/png;base64,{base64.b64encode(data).decode()}"
 
-# Pages shown in the top-right navigation switcher, in display order
+# Pages listed in the custom hamburger menu (render_page_switcher), in
+# display order
 NAV_PAGES = [
-    {"target": "app.py", "label": "All News"},
+    {"target": "app.py", "label": "Client News"},
+    {"target": "pages/sector_news.py", "label": "Sector News"},
     {"target": "pages/dashboard.py", "label": "Dashboard"},
     {"target": "pages/weekly_scores.py", "label": "Weekly Scores"},
-    {"target": "pages/sentiment.py", "label": "Sentiment"},
+    {"target": "pages/sentiment.py", "label": "Client Sentiment"},
+    {"target": "pages/industry_sentiment.py", "label": "Sector Sentiment"},
     {"target": "pages/client_alerts.py", "label": "Alerts"},
-    {"target": "pages/carousel.py", "label": "Carousel"},
     {"target": "pages/tv_display.py", "label": "TV Display"},
 ]
 
@@ -54,13 +56,25 @@ def tier_color(rank_index):
     return TIER_FALLBACK_COLOR
 
 
-# Categorical palette, dark-mode steps, in fixed hue order — first 5 slots
-# (blue/orange/aqua/yellow/violet) cover up to 5 industries. The first 4 are
-# the documented default order's slots, validated for every adjacent pair in
-# both modes; the 5th swaps in the palette's violet step (was magenta) at the
-# user's request — not re-validated against slot 4, but low-risk as a single
-# swatch choice on a 5-series business chart.
-INDUSTRY_COLOR_RAMP = ["#3987e5", "#d95926", "#199e70", "#c98500", "#9085e9"]
+# Categorical palette, dark-mode steps, in fixed hue order. The first 5 slots
+# (blue/orange/aqua/yellow/violet) are the original set — the first 4 are the
+# documented default order's slots, validated for every adjacent pair in both
+# modes; the 5th swaps in the palette's violet step (was magenta) at the
+# user's request. Slots 6-8 (red/brown/white) were added as a page (Sector
+# Sentiment) kept growing past its original industry count — previously any
+# industry past the ramp's length silently fell back to the same
+# INDUSTRY_FALLBACK_COLOR grey, making it visually indistinguishable from the
+# chart's own gridlines. Each slot is chosen to match the actual circle emoji
+# used for the legend dot (LEGEND_DOTS in sentiment.py / industry_sentiment.py)
+# — no plain circle emoji exists for pink/cyan/etc, so straying from
+# red/orange/yellow/green/blue/purple/brown/white would force a mismatched or
+# non-circle (e.g. heart) dot for that slot. White is the last one available
+# before the set runs out entirely — black (the only other remaining circle
+# emoji) wouldn't be visible against this app's dark background.
+INDUSTRY_COLOR_RAMP = [
+    "#3987e5", "#d95926", "#199e70", "#c98500", "#9085e9",
+    "#d9534f", "#8b5e34", "#f3f4f6",
+]
 INDUSTRY_FALLBACK_COLOR = "#9ca3af"
 
 # Sentiment is a reserved, fixed 4-step status scale (good/warning/critical),
@@ -97,7 +111,7 @@ def sentiment_badge_html(label):
 
 
 def sort_articles(news_data, mode):
-    """Shared sort logic for the "All News" and "Dashboard" pages. Data
+    """Shared sort logic for the "Client News" and "Dashboard" pages. Data
     arrives newest-first from the DB; sorts are stable, so ties keep that
     order."""
     if mode == "Top tier first":
@@ -125,8 +139,14 @@ GLOBAL_CSS = """
         position: relative !important;
     }
 
-    /* Completely hide Streamlit's default header spacing bar */
+    /* Streamlit's default header bar (Deploy/Main menu buttons) and its
+       auto-generated multipage sidebar nav are both replaced by the custom
+       hamburger dropdown menu (render_page_switcher, below), so neither is
+       needed here. */
     header[data-testid="stHeader"] {
+        display: none !important;
+    }
+    section[data-testid="stSidebar"] {
         display: none !important;
     }
 
@@ -155,12 +175,75 @@ GLOBAL_CSS = """
         border-color: #3b82f6 !important;
     }
 
-    /* Hide the default sidebar page navigation — the app renders its own
-       page links at the top of each page instead */
-    section[data-testid="stSidebar"],
-    div[data-testid="stSidebarNav"],
-    div[data-testid="collapsedControl"] {
-        display: none !important;
+    /* Custom hamburger menu (render_page_switcher): a native
+       <details>/<summary> dropdown pinned to the top-right corner of the
+       viewport. Real browser toggle behavior — no JS or Streamlit widget
+       needed, so nothing here can go wrong cross-browser the way fighting
+       Streamlit's own native sidebar did. Every link below is a plain
+       <a href>, so clicking one causes a full page navigation — the freshly
+       loaded page's <details> starts closed again on its own, no explicit
+       auto-close logic required. It's an overlay that floats above the page
+       content rather than a sidebar, so it doesn't need to (and shouldn't)
+       resize or push anything underneath it. */
+    .nav-menu {
+        position: fixed;
+        top: 14px;
+        right: 20px;
+        z-index: 999999;
+    }
+    .nav-menu summary {
+        list-style: none;
+        width: 42px;
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: rgba(31, 41, 55, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        color: #d1d5db;
+        font-size: 1.3rem;
+        cursor: pointer;
+        transition: all 0.2s ease-in-out;
+    }
+    .nav-menu summary::-webkit-details-marker {
+        display: none;
+    }
+    .nav-menu summary:hover,
+    .nav-menu[open] summary {
+        color: #f3f4f6;
+        border-color: #3b82f6;
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+    }
+    .nav-menu-panel {
+        display: none;
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        flex-direction: column;
+        min-width: 200px;
+        padding: 8px;
+        background: rgba(17, 24, 39, 0.97);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+    .nav-menu[open] .nav-menu-panel {
+        display: flex;
+    }
+    .nav-menu-panel a {
+        padding: 10px 12px;
+        border-radius: 6px;
+        color: #d1d5db !important;
+        text-decoration: none !important;
+        font-size: 0.92rem;
+        transition: all 0.15s ease-in-out;
+    }
+    .nav-menu-panel a:hover {
+        background-color: rgba(59, 130, 246, 0.15);
+        color: #f3f4f6 !important;
     }
 
     /* ======================================================================
@@ -283,36 +366,6 @@ GLOBAL_CSS = """
         color: #3b82f6 !important;
         box-shadow: 0 0 15px rgba(59, 130, 246, 0.4) !important;
         transform: scale(1.08);
-    }
-
-    /* Page switcher pinned to the top-right corner of the viewport,
-       mirroring the fixed nav arrows in the bottom corners */
-    .st-key-page_switch_btn {
-        position: fixed !important;
-        top: 24px !important;
-        right: 24px !important;
-        z-index: 99999 !important;
-        width: auto !important;
-        display: flex !important;
-        flex-direction: row !important;
-        gap: 8px !important;
-    }
-
-    /* Page navigation links (switch between carousel and list views) */
-    a[data-testid="stPageLink-NavLink"] {
-        background-color: rgba(31, 41, 55, 0.8) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        border-radius: 20px !important;
-        padding: 6px 16px !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-    a[data-testid="stPageLink-NavLink"]:hover {
-        border-color: #3b82f6 !important;
-        box-shadow: 0 0 10px rgba(59, 130, 246, 0.3) !important;
-    }
-    a[data-testid="stPageLink-NavLink"] p {
-        color: #d1d5db !important;
-        font-size: 0.9rem !important;
     }
 
     /* Clickable Title CSS Styles */
@@ -799,45 +852,8 @@ GLOBAL_CSS = """
         border-top: 1px solid rgba(255, 255, 255, 0.06);
     }
 
-    /* ======================================================================
-       FIXED NAVIGATION ARROWS — PINNED TO THE BOTTOM CORNERS OF THE VIEWPORT
-       ====================================================================== */
-    /* Target the buttons' actual Streamlit containers (via their st-key class) directly,
-       instead of a wrapper div, since st.markdown/st.button calls don't nest in the DOM.
-       position: fixed anchors them to the viewport, so they never move regardless of
-       card height, scrolling, or screen size. */
-    .st-key-left_nav_btn {
-        position: fixed !important;
-        bottom: 24px !important;
-        left: 24px !important;
-        z-index: 99999 !important;
-        width: 55px !important;
-    }
-
-    .st-key-right_nav_btn {
-        position: fixed !important;
-        bottom: 24px !important;
-        right: 24px !important;
-        z-index: 99999 !important;
-        width: 55px !important;
-    }
-
     /* Mobile */
     @media (max-width: 800px) {
-        .st-key-page_switch_btn {
-            top: 12px !important;
-            right: 12px !important;
-        }
-
-        .st-key-left_nav_btn {
-            bottom: 16px !important;
-            left: 12px !important;
-        }
-        .st-key-right_nav_btn {
-            bottom: 16px !important;
-            right: 12px !important;
-        }
-
         div[data-testid="stImage"] img {
             height: 255px !important;
         }
@@ -873,14 +889,32 @@ def inject_css():
     st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 
 
+def _page_url(target):
+    """Streamlit multipage URL path for a page file: app.py -> "/",
+    pages/foo.py -> "/foo"."""
+    if target == "app.py":
+        return "/"
+    return "/" + target.removeprefix("pages/").removesuffix(".py")
+
+
 def render_page_switcher(current_page):
-    """Links to every other page, pinned to the top-right corner of the
-    viewport. The keyed container gives CSS a stable .st-key-page_switch_btn
-    hook, which also lays the links out in a row."""
-    with st.container(key="page_switch_btn"):
-        for page in NAV_PAGES:
-            if page["target"] != current_page:
-                st.page_link(page["target"], label=page["label"])
+    """Custom hamburger-menu nav, pinned to the top-right corner of the
+    viewport: a native <details>/<summary> dropdown (real click-to-toggle,
+    no JS or Streamlit widget needed) listing a plain <a href> link to every
+    other page. Plain links (not st.page_link) so the whole menu can live in
+    one raw HTML block — a widget rendered via a separate st.markdown call
+    wouldn't actually nest inside the <details>, only appear after it."""
+    links_html = "".join(
+        f'<a href="{_page_url(page["target"])}" target="_self">{page["label"]}</a>'
+        for page in NAV_PAGES if page["target"] != current_page
+    )
+    st.markdown(
+        f'<details class="nav-menu">'
+        f'<summary>☰</summary>'
+        f'<div class="nav-menu-panel">{links_html}</div>'
+        f'</details>',
+        unsafe_allow_html=True,
+    )
 
 
 @st.cache_resource
@@ -933,6 +967,53 @@ def load_all_news():
     if Supabase fails."""
     try:
         return fetch_all_news_from_supabase()
+    except Exception as e:
+        st.error(f"Supabase connection failed: {e}")
+        st.stop()
+
+
+# Same CUTOFF_TIMESPAN / all-time pair as `news`, for the `sector_news` table
+# (industry-wide items, not tied to a single company's article feed).
+@st.cache_data(ttl=CACHE_TIMEOUT)
+def fetch_recent_sector_news_from_supabase():
+    supabase = init_supabase()
+    cutoff_timestamp = (datetime.now(timezone.utc) - timedelta(hours=CUTOFF_TIMESPAN)).isoformat()
+    response = (
+        supabase.table("sector_news")
+        .select("*")
+        .gte("pub_date", cutoff_timestamp)
+        .order("pub_date", desc=True)
+        .execute()
+    )
+    return response.data
+
+
+def load_sector_news():
+    """Fetch sector news, stopping the page with an error message if Supabase fails."""
+    try:
+        return fetch_recent_sector_news_from_supabase()
+    except Exception as e:
+        st.error(f"Supabase connection failed: {e}")
+        st.stop()
+
+
+@st.cache_data(ttl=CACHE_TIMEOUT)
+def fetch_all_sector_news_from_supabase():
+    supabase = init_supabase()
+    response = (
+        supabase.table("sector_news")
+        .select("*")
+        .order("pub_date", desc=True)
+        .execute()
+    )
+    return response.data
+
+
+def load_all_sector_news():
+    """Fetch every recorded sector news item, stopping the page with an
+    error message if Supabase fails."""
+    try:
+        return fetch_all_sector_news_from_supabase()
     except Exception as e:
         st.error(f"Supabase connection failed: {e}")
         st.stop()
@@ -1030,6 +1111,31 @@ def load_industry_digest():
     message if Supabase fails."""
     try:
         return fetch_industry_digest_from_supabase()
+    except Exception as e:
+        st.error(f"Supabase connection failed: {e}")
+        st.stop()
+
+
+# Same shape as industry_digest_weekly (industry, week_start/end, summary,
+# highlights, trends, sentiment_label/score, article_count) — a separate
+# weekly industry-sentiment table/page pair.
+@st.cache_data(ttl=CACHE_TIMEOUT)
+def fetch_industry_sentiment_weekly_from_supabase():
+    supabase = init_supabase()
+    response = (
+        supabase.table("industry_sentiment_weekly")
+        .select("*")
+        .order("week_start", desc=False)
+        .execute()
+    )
+    return response.data
+
+
+def load_industry_sentiment_weekly():
+    """Fetch the industry_sentiment_weekly data, stopping the page with an
+    error message if Supabase fails."""
+    try:
+        return fetch_industry_sentiment_weekly_from_supabase()
     except Exception as e:
         st.error(f"Supabase connection failed: {e}")
         st.stop()
@@ -1146,6 +1252,35 @@ def load_client_alerts():
         st.stop()
     pseudonym_map = load_client_pseudonym_map()
     return [_decode_client_alert_row(row, pseudonym_map) for row in rows]
+
+
+# Mock local files for now, same pattern as CLIENT_PSEUDONYM_FILE — swap for
+# real tables once client->employee assignment and employee identity live in
+# the database. client_employees maps a pseudonym client_id to the list of
+# employee_ids assigned to that account; employee_names resolves an
+# employee_id to a display name.
+CLIENT_EMPLOYEES_FILE = Path(__file__).parent / "client_employees.local.json"
+EMPLOYEE_NAMES_FILE = Path(__file__).parent / "employee_names.local.json"
+
+
+@st.cache_data(ttl=CACHE_TIMEOUT)
+def load_client_employee_map():
+    """Map each pseudonymized client_id to its list of assigned employee_ids."""
+    try:
+        with open(CLIENT_EMPLOYEES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+@st.cache_data(ttl=CACHE_TIMEOUT)
+def load_employee_name_map():
+    """Map each employee_id to their display name."""
+    try:
+        with open(EMPLOYEE_NAMES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
 
 
 # One representative logo per company, sourced from the `news` table (whose

@@ -3,12 +3,13 @@ from collections import Counter
 import streamlit as st
 
 from shared import (
-    inject_css, load_news, format_pub_date, title_with_sources_html,
-    render_page_switcher, sort_articles, tier_number, tier_color, FALLBACK_IMAGE,
+    inject_css, render_page_switcher, load_news, format_pub_date, title_with_sources_html,
+    sort_articles, tier_number, tier_color, FALLBACK_IMAGE,
 )
 
 st.set_page_config(page_title="News Radar — Dashboard", page_icon="🚀", layout="centered")
 inject_css()
+render_page_switcher("pages/dashboard.py")
 
 CARD_COLUMNS = 3
 
@@ -90,9 +91,6 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
-# Page switcher fixed in the top-right corner
-render_page_switcher("pages/dashboard.py")
 
 st.title("Dashboard")
 
@@ -180,7 +178,7 @@ filtered_data = sort_articles(filtered_data, sort_option)
 
 st.markdown(
     f"<p style='color: #9ca3af; font-size: 0.85rem; margin: 4px 0 16px 0;'>"
-    f"Showing {len(filtered_data)} of {total} articles</p>",
+    f"Showing {len(filtered_data)} of {total} articles from the last 7 days</p>",
     unsafe_allow_html=True,
 )
 

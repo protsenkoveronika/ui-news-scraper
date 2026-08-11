@@ -3,14 +3,28 @@ from datetime import datetime
 import streamlit as st
 
 from shared import (
-    inject_css, load_client_alerts, parse_tier_highlights, render_page_switcher,
-    tier_color, get_company_logo_map, company_logo_src,
+    inject_css, render_page_switcher, load_client_alerts, load_client_employee_map, load_employee_name_map,
+    parse_tier_highlights, tier_color, get_company_logo_map, company_logo_src,
 )
 
 st.set_page_config(page_title="News Radar — Alerts", page_icon="🚀", layout="centered")
 inject_css()
-
 render_page_switcher("pages/client_alerts.py")
+
+st.markdown("""
+    <style>
+    /* Employee filter kept narrow (its own column, not full page width) and
+       styled to match the muted-label look used elsewhere on this page. */
+    .st-key-alerts_employee_filter_col label[data-testid="stWidgetLabel"] p {
+        color: #9ca3af !important;
+        font-size: 0.85rem !important;
+    }
+    .st-key-alerts_employee_filter_col {
+        max-width: 320px;
+        margin-bottom: 20px;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 alerts = load_client_alerts()
 
@@ -31,6 +45,13 @@ def _fmt_date(d):
 
 
 company_logos = get_company_logo_map()
+client_employee_map = load_client_employee_map()
+employee_name_map = load_employee_name_map()
+
+
+def _employee_names_for_client(client_id):
+    return [employee_name_map.get(eid, eid) for eid in client_employee_map.get(client_id, [])]
+
 
 # Latest alert per client, ranked by total_score — a prioritized feed rather
 # than a full history: the most current signal for each account, most
@@ -41,16 +62,43 @@ for row in alerts:
     if not existing or row["alert_date"] > existing["alert_date"]:
         latest_by_client[row["client"]] = row
 
-cards = sorted(latest_by_client.values(), key=lambda r: -r["total_score"])
+cards_all = sorted(latest_by_client.values(), key=lambda r: -r["total_score"])
+
+all_employee_names = sorted({
+    name for row in cards_all for name in _employee_names_for_client(row.get("client_id"))
+})
+
+# Read the filter's current value from session_state before the widget
+# itself is declared (further down, so it renders under the title) — a
+# widget's value is already in session_state by the time the script re-runs
+# after the user changes it, so this reflects the current selection just
+# the same. Rendering header then filter in this natural top-to-bottom
+# order (matching their visual order) avoids inserting content into an
+# already-rendered container after the fact, which caused a layout jump.
+employee_filter = st.session_state.get("alerts_employee_filter", [])
+cards = cards_all
+if employee_filter:
+    cards = [
+        row for row in cards_all
+        if set(_employee_names_for_client(row.get("client_id"))) & set(employee_filter)
+    ]
+
+if not cards:
+    st.info("No clients match the selected employee filter.")
+    st.stop()
+
 most_recent_date = max(row["alert_date"] for row in cards)
 
 st.markdown(
     f'<div class="alert-feed-header">'
     f'<h1 style="margin:0;">Client Alerts</h1>'
-    f'<div class="alert-feed-meta">{len(cards)} clients · latest as of {_fmt_date(most_recent_date)}</div>'
+    f'<div class="alert-feed-meta">{len(cards)} clients&nbsp;&nbsp;latest as of {_fmt_date(most_recent_date)}</div>'
     f'</div>',
     unsafe_allow_html=True,
 )
+
+with st.container(key="alerts_employee_filter_col"):
+    st.multiselect("Filter by employee", all_employee_names, key="alerts_employee_filter")
 
 EVIDENCE_PREVIEW_COUNT = 4
 
@@ -112,7 +160,7 @@ for rank, alert in enumerate(cards, start=1):
         f'<span class="alert-client-name">{client}</span>'
         f'</div>'
         f'<div class="alert-stats">'
-        f'<span class="alert-stats-score">Score {alert["total_score"]:g}</span> · {alert["article_count"]} articles<br>'
+        f'<span class="alert-stats-score">Score {alert["total_score"]:g}</span>&nbsp;&nbsp;{alert["article_count"]} articles<br>'
         f'{period_label}'
         f'</div>'
         f'</div>'

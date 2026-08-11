@@ -1,12 +1,11 @@
 # News Radar
 
-A Streamlit app that displays recent company news pulled from a Supabase database and summarized with AI, either as a full sortable list or as a self-advancing carousel.
+A Streamlit app that displays recent company news pulled from a Supabase database and summarized with AI as a full sortable list.
 
 ## Features
 
 - Fetches news from the last 72 hours from a Supabase `news` table (cached for 3 hours)
-- **All News** page (`app.py`): full list with company logo, clickable title, and a collapsible AI-summary "Insights" panel; sortable by newest or by top tier
-- **Carousel** page (`pages/carousel.py`): auto-advances through articles every ~20 seconds, with manual prev/next arrows
+- **Client News** page (`app.py`): full list with company logo, clickable title, and a collapsible AI-summary "Insights" panel; sortable by newest or by top tier
 - Hovering an article title reveals every related source URL when more than one is stored
 - Falls back to an auto-refresh "waiting" screen when no recent news is found
 
@@ -39,8 +38,7 @@ A Streamlit app that displays recent company news pulled from a Supabase databas
 ## Project Structure
 
 ```
-app.py                          # All News list page (entry point)
-pages/carousel.py               # Carousel page
+app.py                          # Client News list page (entry point)
 shared.py                       # Shared CSS, Supabase access, and helpers
 assets/                         # Local company logo/images
 .streamlit/secrets-example.toml # Template for required secrets

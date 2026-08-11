@@ -3,12 +3,10 @@ from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
-from shared import inject_css, load_all_companies, load_last_7_days_news, load_week_news, render_page_switcher, WEEKDAY_LABELS
+from shared import inject_css, render_page_switcher, load_all_companies, load_last_7_days_news, load_week_news, WEEKDAY_LABELS
 
 st.set_page_config(page_title="News Radar — Weekly Scores", page_icon="🚀", layout="centered")
 inject_css()
-
-# Page switcher fixed in the top-right corner
 render_page_switcher("pages/weekly_scores.py")
 
 st.title("Weekly Scores")

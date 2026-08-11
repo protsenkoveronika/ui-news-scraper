@@ -3,13 +3,13 @@ from datetime import datetime
 import streamlit as st
 
 from shared import (
-    inject_css, render_page_switcher, load_industry_digest, parse_highlights, parse_trends,
+    inject_css, render_page_switcher, load_industry_sentiment_weekly, parse_highlights, parse_trends,
     industry_color, sentiment_status, sentiment_badge_html,
 )
 
-st.set_page_config(page_title="News Radar — Sentiment", page_icon="🚀", layout="centered")
+st.set_page_config(page_title="News Radar — Sector Sentiment", page_icon="🚀", layout="centered")
 inject_css()
-render_page_switcher("pages/sentiment.py")
+render_page_switcher("pages/industry_sentiment.py")
 
 # Top-align card grids instead of the shared vertical-center rule; theme the
 # industry-filter pills to match the rest of the page
@@ -44,14 +44,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("Client Industry Sentiment")
+st.title("Sector Sentiment")
 
-digest = load_industry_digest()
+digest = load_industry_sentiment_weekly()
 
 if not digest:
     st.info(
-        "No sentiment digest data available yet. If you've already inserted rows into "
-        "`industry_digest_weekly`, double-check that a SELECT policy for the anon role "
+        "No sector sentiment data available yet. If you've already inserted rows into "
+        "`industry_sentiment_weekly`, double-check that a SELECT policy for the anon role "
         "exists on that table (the same fix used for the `news` table)."
     )
     st.stop()
@@ -91,7 +91,7 @@ selected_week = st.selectbox(
     "Week",
     options=list(reversed(weeks)),
     format_func=lambda w: week_labels[w],
-    key="sentiment_week",
+    key="isw_week",
 )
 
 week_rows = [row for row in digest if row["week_start"] == selected_week]
@@ -229,7 +229,7 @@ selected_industries = st.pills(
     selection_mode="multi",
     default=industries,
     format_func=lambda industry: f"{dot_for_industry[industry]} {industry}",
-    key="sentiment_industry_filter",
+    key="isw_industry_filter",
     label_visibility="collapsed",
 )
 active_industries = set(selected_industries or [])

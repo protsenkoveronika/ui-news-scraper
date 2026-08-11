@@ -1,52 +1,16 @@
 import streamlit as st
 
 from shared import (
-    inject_css, render_page_switcher, load_all_news, load_news, format_pub_date,
-    title_with_sources_html, sort_articles, tier_number, FALLBACK_IMAGE,
+    inject_css, render_page_switcher, load_all_sector_news, load_sector_news, format_pub_date,
+    title_with_sources_html, sort_articles, tier_number,
 )
 
-st.set_page_config(page_title="News Radar", page_icon="🚀", layout="centered")
+st.set_page_config(page_title="News Radar — Sector News", page_icon="🚀", layout="centered")
 inject_css()
-render_page_switcher("app.py")
+render_page_switcher("pages/sector_news.py")
 
 st.markdown("""
     <style>
-    /* Each article row is wrapped in a keyed container (class name contains
-       "st-key-news_row_"). The logo card is a fixed height (not tied to the
-       content column, which varies with title length) — stImageContainer is
-       the white rounded card at that fixed height, and the image floats
-       centered inside it at its natural (aspect-preserved) size, capped by
-       max-width/max-height so wide logos never overflow the card. */
-    div[class*="st-key-news_row_"] div[data-testid="stImageContainer"] {
-        height: 150px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        background: #ffffff !important;
-        border-radius: 10px !important;
-        padding: 10px !important;
-        box-sizing: border-box !important;
-        overflow: hidden !important;
-    }
-    /* shared.py's global stImage rule paints its own white card frame
-       (background, padding, border-radius, box-shadow) directly onto the
-       <img> — meant for pages with one big image. Here that card frame
-       lives on stImageContainer instead, so it's reset to plain here;
-       otherwise the img's own shadow shows as a blurry halo nested inside
-       the container's card. */
-    div[class*="st-key-news_row_"] div[data-testid="stImage"] img {
-        width: auto !important;
-        height: auto !important;
-        max-width: 100% !important;
-        max-height: 100% !important;
-        object-fit: contain !important;
-        background: transparent !important;
-        padding: 0 !important;
-        border: none !important;
-        border-radius: 0 !important;
-        box-shadow: none !important;
-    }
-
     .list-title {
         color: #f3f4f6 !important;
         text-decoration: none !important;
@@ -100,7 +64,7 @@ st.markdown("""
        dead gap to the right — margin-left: auto pushes it to the column's
        right edge instead. Checked state forced to the app's blue accent
        instead of Streamlit's default red fill. */
-    .st-key-news_all_time {
+    .st-key-sector_all_time {
         margin-left: auto !important;
     }
     div[data-testid="stCheckbox"] label[data-selected="true"] > div:first-of-type {
@@ -110,7 +74,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("Client News")
+st.title("Sector News")
 
 # ======================================================================
 # FILTERS
@@ -122,31 +86,31 @@ with filter_col4:
     sort_option = st.selectbox(
         "Sort by",
         ["Newest first", "Top tier first", "Most relevant"],
-        key="news_sort",
+        key="sector_sort",
     )
 with all_time_col:
-    all_time = st.checkbox("All time", key="news_all_time")
+    all_time = st.checkbox("All time", key="sector_all_time")
 
-news_data = load_all_news() if all_time else load_news()
+news_data = load_all_sector_news() if all_time else load_sector_news()
 
 if not news_data:
     st.warning("No articles found.")
     st.stop()
 
-all_companies = sorted({a.get("company") for a in news_data if a.get("company")})
+all_topics = sorted({a.get("topic") for a in news_data if a.get("topic")})
 all_industries = sorted({a.get("industry") for a in news_data if a.get("industry")})
 all_tiers = sorted({a.get("tier") for a in news_data if a.get("tier")}, key=lambda t: tier_number({"tier": t}))
 
 with filter_col1:
-    company_filter = st.multiselect("Company", all_companies, key="news_company_filter")
+    topic_filter = st.multiselect("Topic", all_topics, key="sector_topic_filter")
 with filter_col2:
-    industry_filter = st.multiselect("Industry", all_industries, key="news_industry_filter")
+    industry_filter = st.multiselect("Industry", all_industries, key="sector_industry_filter")
 with filter_col3:
-    tier_filter = st.multiselect("Tier", all_tiers, key="news_tier_filter")
+    tier_filter = st.multiselect("Tier", all_tiers, key="sector_tier_filter")
 
 news_data = [
     a for a in news_data
-    if (not company_filter or a.get("company") in company_filter)
+    if (not topic_filter or a.get("topic") in topic_filter)
     and (not industry_filter or a.get("industry") in industry_filter)
     and (not tier_filter or a.get("tier") in tier_filter)
 ]
@@ -165,22 +129,17 @@ if not news_data:
 st.markdown("<br>", unsafe_allow_html=True)
 
 for row_idx, article in enumerate(news_data):
-    row = st.container(key=f"news_row_{row_idx}")
-    logo_col, content_col = row.columns([1, 5])
-
-    with logo_col:
-        st.image(article.get("image_url", FALLBACK_IMAGE), use_container_width=True)
-
-    with content_col:
-        # Company + date meta line
-        company = str(article.get('company', 'Unknown')).upper()
+    row = st.container(key=f"sector_row_{row_idx}")
+    with row:
+        # Topic + date meta line (no company or photo — sector-wide item)
+        topic = str(article.get("topic") or "Unknown").upper()
         tier = article.get("tier")
         tier_badge = f'<span class="tier-badge">{tier.upper()}</span>' if tier else ""
         relevance = article.get("relevance")
         relevance_badge = f'<span class="tier-badge">RELEVANCE {relevance}</span>' if relevance is not None else ""
         st.markdown(
             f"<p style='color: #9ca3af; font-size: 0.8rem; margin: 0 0 4px 0;'>"
-            f"<strong>{company}</strong> &nbsp;·&nbsp; <em>{format_pub_date(article)}</em>{tier_badge}{relevance_badge}</p>",
+            f"<strong>{topic}</strong> &nbsp;·&nbsp; <em>{format_pub_date(article)}</em>{tier_badge}{relevance_badge}</p>",
             unsafe_allow_html=True
         )
 
