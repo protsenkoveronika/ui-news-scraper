@@ -1365,13 +1365,14 @@ def parse_tier_highlights(raw):
     return result
 
 
-def get_article_urls(article):
-    """Collect all unique source URLs from the related_urls column (a Postgres
-    text[] array, returned by supabase-py as a native list; a JSON-encoded
-    string is also accepted for compatibility with older rows)."""
+def _parse_url_list(raw):
+    """Normalize a jsonb/text[] column of source URLs into a deduplicated
+    list of URL strings — shared by every column that stores sources this
+    way (`news.related_urls`, `client_alerts.sources`, ...). Items may be
+    plain strings or {url/link/href: ...} objects; a JSON-encoded string is
+    also accepted for compatibility with older rows."""
     urls = []
 
-    raw = article.get("related_urls")
     if raw:
         try:
             parsed = json.loads(raw) if isinstance(raw, str) else raw
@@ -1396,6 +1397,19 @@ def get_article_urls(article):
             seen.add(u)
             unique_urls.append(u)
     return unique_urls
+
+
+def get_article_urls(article):
+    """Collect all unique source URLs from the related_urls column (a Postgres
+    text[] array, returned by supabase-py as a native list; a JSON-encoded
+    string is also accepted for compatibility with older rows)."""
+    return _parse_url_list(article.get("related_urls"))
+
+
+def get_alert_source_urls(alert):
+    """Collect all unique source URLs from client_alerts.sources (jsonb),
+    same shape and parsing as get_article_urls's related_urls column."""
+    return _parse_url_list(alert.get("sources"))
 
 
 def tier_number(article):

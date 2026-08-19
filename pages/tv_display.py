@@ -18,17 +18,99 @@ inject_css()
 # ======================================================================
 # KIOSK-MODE OVERRIDES: full-bleed Seargin-branded background, no chrome
 # ======================================================================
-st.markdown("""
+# Wrapped in its own keyed container (rather than a bare st.markdown) so it
+# can be display:none'd as a whole — see .st-key-tv_style_wrap below. A
+# <style> tag has no visual footprint of its own regardless of its
+# container's display, but the WRAPPING stElementContainer is still a
+# normal flex item in the page's vertical block unless it's explicitly
+# hidden too, and Streamlit puts a 16px gap between every pair of flex
+# items — so a handful of these zero-height utility elements (this style
+# block, the autorefresh component, the keyboard-nav script) were each
+# quietly padding out the space above the progress bar despite rendering
+# nothing themselves.
+st.container(key="tv_style_wrap").markdown("""
     <style>
+    /* Fluid sizing tokens: clamp(min, preferred, max) scales every dimension
+       continuously with viewport width instead of jumping at a couple of
+       fixed breakpoints — the same page needs to read well on a phone held
+       at arm's length, a laptop at a desk, and an office TV seen from across
+       the room, and those don't fall into 2-3 neat buckets. The preferred
+       value is vw-based so it keeps scaling smoothly all the way up to very
+       wide TV viewports, capped by the max so text doesn't run away on an
+       8K display. */
+    :root {
+        /* Bakes in the same look you got from setting the browser to 80%
+           zoom, permanently, instead of something that has to be set by
+           hand on every device and wouldn't survive a kiosk reboot anyway.
+           Browser zoom doesn't just shrink the rendered page uniformly —
+           it also enlarges the *effective* viewport that vw units measure
+           against by the inverse amount (1 / 0.8), and those two effects
+           exactly cancel out for anything sized with vw. What's left over
+           is that only the fixed (non-vw) part of each size actually ends
+           up smaller. That's why every clamp() below has its fixed
+           min/base/max wrapped in calc(... * var(--tv-zoom)) while its vw
+           coefficient is untouched — this reproduces exactly what 80% zoom
+           looked like, at 100% zoom. Tune this one number to try a
+           different level. */
+        --tv-zoom: 0.75;
+
+        --tv-headline-size: clamp(calc(1.4rem * var(--tv-zoom)), calc(1rem * var(--tv-zoom)) + 1.6vw, calc(4.2rem * var(--tv-zoom)));
+        --tv-panel-text-size: clamp(calc(0.85rem * var(--tv-zoom)), calc(0.72rem * var(--tv-zoom)) + 0.5vw, calc(1.55rem * var(--tv-zoom)));
+        --tv-panel-title-size: clamp(calc(0.72rem * var(--tv-zoom)), calc(0.65rem * var(--tv-zoom)) + 0.25vw, calc(1.2rem * var(--tv-zoom)));
+        --tv-date-size: clamp(calc(0.78rem * var(--tv-zoom)), calc(0.68rem * var(--tv-zoom)) + 0.3vw, calc(1.3rem * var(--tv-zoom)));
+        --tv-footer-size: clamp(calc(0.65rem * var(--tv-zoom)), calc(0.58rem * var(--tv-zoom)) + 0.2vw, calc(1.05rem * var(--tv-zoom)));
+        --tv-media-h: clamp(calc(96px * var(--tv-zoom)), calc(60px * var(--tv-zoom)) + 9vw, calc(230px * var(--tv-zoom)));
+        --tv-pad-x: clamp(calc(16px * var(--tv-zoom)), 4vw, calc(80px * var(--tv-zoom)));
+        --tv-pad-top: clamp(calc(16px * var(--tv-zoom)), 2.5vw, calc(40px * var(--tv-zoom)));
+        --tv-pad-bottom: clamp(calc(40px * var(--tv-zoom)), 6vw, calc(100px * var(--tv-zoom)));
+        --tv-panel-pad: clamp(calc(14px * var(--tv-zoom)), 1.6vw, calc(28px * var(--tv-zoom)));
+        --tv-corner-gap: clamp(calc(14px * var(--tv-zoom)), 2.5vw, calc(32px * var(--tv-zoom)));
+        --tv-logo-h: clamp(calc(24px * var(--tv-zoom)), 3vw, calc(44px * var(--tv-zoom)));
+    }
+
+    /* Kiosk display — nobody can ever scroll it, so it should never look
+       scrollable either. Content that runs long simply gets clipped at the
+       bottom instead of growing the page. */
+    html, body {
+        overflow: hidden !important;
+    }
     .stApp {
         background: radial-gradient(circle at 15% 10%, #16265c 0%, #0a0e27 55%, #05060f 100%) !important;
+        height: 100vh !important;
+        overflow: hidden !important;
+    }
+    /* Streamlit gives its own main content area (a <section>, not a div —
+       a div[data-testid="stMain"] selector silently never matches it)
+       overflow-y: auto by default. html/body/.stApp being non-scrollable
+       doesn't stop THIS specific ancestor from becoming the one that
+       scrolls once content (a long AI summary) grows taller than the
+       screen. */
+    section[data-testid="stMain"] {
+        height: 100vh !important;
+        overflow: hidden !important;
     }
     .block-container {
         max-width: 100% !important;
         padding: 0 !important;
     }
+    /* Streamlit's stFullScreenFrame wraps the image in an unnamed flex div
+       that shrink-wraps to the image's own aspect ratio instead of
+       stretching to the column's full width (same fix as dashboard.py) —
+       so width: 100% on the <img> alone was resolving against an
+       already-shrunk parent, leaving the image narrower than its column
+       (most visible once the column goes full-row-width on a narrow screen). */
+    div[data-testid="stFullScreenFrame"] > div,
+    div[data-testid="stImage"],
+    div[data-testid="stImageContainer"] {
+        width: 100% !important;
+    }
     div[data-testid="stImage"] img {
-        height: 170px !important;
+        height: var(--tv-media-h) !important;
+        width: 100% !important;
+        /* Photos vary in aspect ratio; cover crops to fill the frame instead
+           of stretching (the default) or letterboxing, which is what a
+           magazine-style news photo wants here. */
+        object-fit: cover !important;
         background-color: #ffffff;
     }
     div[data-testid="stHorizontalBlock"] {
@@ -38,9 +120,9 @@ st.markdown("""
     /* Logo pinned to the bottom-left corner, like a broadcast bug */
     .tv-logo {
         position: fixed;
-        bottom: 32px;
-        left: 32px;
-        height: 40px;
+        bottom: var(--tv-corner-gap);
+        left: var(--tv-corner-gap);
+        height: var(--tv-logo-h);
         width: auto;
         z-index: 9999;
     }
@@ -48,41 +130,45 @@ st.markdown("""
     /* Slide counter pinned to the bottom-right corner, mirroring the logo */
     .tv-footer {
         position: fixed;
-        bottom: 32px;
-        right: 32px;
+        bottom: var(--tv-corner-gap);
+        right: var(--tv-corner-gap);
         color: #4b5563;
-        font-size: 0.9rem;
+        font-size: var(--tv-footer-size);
         z-index: 9999;
     }
 
     .tv-progress-track {
-        height: 4px;
+        height: calc(4px * var(--tv-zoom));
         width: 100%;
         background: rgba(255, 255, 255, 0.08);
     }
     .tv-progress-fill {
         height: 100%;
         background: linear-gradient(90deg, #2563eb, #22c55e);
-        border-radius: 0 4px 4px 0;
+        border-radius: 0 calc(4px * var(--tv-zoom)) calc(4px * var(--tv-zoom)) 0;
     }
 
     .st-key-tv_header_row {
-        padding: 40px 80px 0 80px;
+        padding: var(--tv-pad-top) var(--tv-pad-x) 0 var(--tv-pad-x);
     }
     .st-key-tv_panels_row {
-        padding: 32px 80px 100px 80px;
+        padding: clamp(calc(8px * var(--tv-zoom)), 1.5vw, calc(16px * var(--tv-zoom))) var(--tv-pad-x) var(--tv-pad-bottom) var(--tv-pad-x);
     }
 
-    /* Title sits at the top of the column; the date anchors to the bottom-right
-       of the row instead — height matches the photo (170px) so "bottom" means
-       the same thing for both */
+    /* Title sits at the top of the column; the date anchors to the
+       bottom-right of the row instead — height matches the photo so
+       "bottom" means the same thing for both. This side-by-side alignment
+       only makes sense while the image/text columns sit next to each other;
+       below the stacking breakpoint it's overridden to plain flow instead
+       (see the max-width: 640px block), since a fixed height here would
+       either clip a longer wrapped headline or leave a dead gap. */
     .tv-header-col {
         position: relative;
-        height: 170px;
+        height: var(--tv-media-h);
     }
     .tv-headline {
         color: #f9fafb;
-        font-size: 2.6rem;
+        font-size: var(--tv-headline-size);
         font-weight: 700;
         line-height: 1.25;
     }
@@ -95,7 +181,7 @@ st.markdown("""
         bottom: 0;
         right: 0;
         color: #6b7280;
-        font-size: 1.05rem;
+        font-size: var(--tv-date-size);
     }
 
     .tv-panel {
@@ -103,30 +189,117 @@ st.markdown("""
         backdrop-filter: blur(10px);
         -webkit-backdrop-filter: blur(10px);
         border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 12px;
-        padding: 28px;
+        border-radius: calc(12px * var(--tv-zoom));
+        padding: var(--tv-panel-pad);
         height: 100%;
     }
     .tv-panel-insights { border-left: 4px solid #3b82f6; }
     .tv-panel-opportunity { border-left: 4px solid #34d399; }
     .tv-panel-title {
-        font-size: 1rem;
+        font-size: var(--tv-panel-title-size);
         font-weight: 700;
         letter-spacing: 0.04em;
-        margin-bottom: 12px;
+        margin-bottom: calc(12px * var(--tv-zoom));
     }
     .tv-panel-insights .tv-panel-title { color: #60a5fa; }
     .tv-panel-opportunity .tv-panel-title { color: #34d399; }
     .tv-panel-text {
         color: #e5e7eb;
-        font-size: 1.15rem;
+        font-size: var(--tv-panel-text-size);
         line-height: 1.6;
     }
 
+    /* Streamlit gives every stMarkdownContainer a -16px bottom margin, meant
+       to cancel out the gap it puts between multiple stacked elements in a
+       vertical block — with only one element in each of these columns (the
+       panel card itself), that compensation has nothing to offset, and
+       instead makes the column's own layout box end 16px above the panel's
+       actual bottom edge. Invisible while the panel is pinned to
+       height: 100% (the desktop side-by-side case, below), but once it
+       switches to height: auto on a narrow screen that phantom 16px lets it
+       overflow past its own column and swallow the gap to the next one. */
+    .st-key-tv_panels_row div[data-testid="stMarkdownContainer"] {
+        margin-bottom: 0 !important;
+    }
+
     /* Real Streamlit buttons that drive prev/next, triggered only via the
-       keyboard-arrow / click-side JS below — never shown to the viewer */
+       keyboard-arrow / click-side JS below — never shown to the viewer.
+       display: none alone should be enough, but these are the very first
+       elements in the page (rendered before the progress bar/header), so
+       any brief instant where this rule hasn't taken effect yet — e.g. a
+       slower/older embedded browser on the actual TV — would show up right
+       at the top. The extra properties are pure defense in depth: even if
+       something else ever forced display back on, there's still nothing
+       to see. */
     .st-key-tv_prev_btn, .st-key-tv_next_btn {
         display: none !important;
+        position: absolute !important;
+        width: 0 !important;
+        height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+    }
+
+    /* This page's own style block, the autorefresh timer, and the
+       keyboard-nav script (below) render nothing visible either — same
+       phantom-gap issue as above, fixed the same way. Hiding an ancestor
+       doesn't stop a <style> tag from applying or an iframe from running
+       its script/timer, so this is safe for all three.
+       st_autorefresh's own element carries its key class directly
+       (.st-key-tv_ticker), but st.container(key=...) puts that class on an
+       *inner* node while the container's own outer stLayoutWrapper — the
+       thing that actually sits in this page's flex layout and counts
+       toward the gap — stays unkeyed. :has() reaches that outer wrapper
+       via the keyed descendant instead. */
+    .st-key-tv_ticker,
+    div[data-testid="stLayoutWrapper"]:has(.st-key-tv_style_wrap),
+    div[data-testid="stLayoutWrapper"]:has(.st-key-tv_kbd_wrap) {
+        display: none !important;
+    }
+
+    /* Below Streamlit's own column-stacking breakpoint (phones, narrow
+       windows), the image and headline stack vertically instead of sitting
+       side by side — the fixed height that keeps them bottom-aligned while
+       side-by-side no longer serves a purpose, and would either clip a
+       wrapped headline or leave dead space beneath a short one. Panels
+       (Insights / Seargin Opportunity) also stack, so their card padding
+       and text size come down another notch to keep both fully visible
+       without scrolling on a small screen. */
+    @media (max-width: 640px) {
+        .tv-header-col {
+            height: auto;
+            padding-bottom: calc(8px * var(--tv-zoom));
+        }
+        .tv-date {
+            position: static;
+            display: block;
+            margin-top: calc(6px * var(--tv-zoom));
+        }
+        .st-key-tv_header_row {
+            padding-top: calc(12px * var(--tv-zoom));
+        }
+        .st-key-tv_panels_row {
+            padding-top: calc(8px * var(--tv-zoom));
+        }
+        .tv-panel {
+            padding: calc(16px * var(--tv-zoom));
+            /* height: 100% is what keeps the two panels the same height
+               while they sit side by side (their column is only as tall as
+               the shorter one, so it stretches to match). Once the row
+               wraps and each panel gets its own full-width line, that same
+               100% instead resolves against the *whole wrapped block*
+               (both panels + the gap between them combined), so the first
+               panel overflows by exactly the gap's height and visually
+               swallows it, leaving the two cards touching with no visible
+               separation. Auto height here lets each card size to its own
+               content so the row's real gap shows between them. */
+            height: auto;
+        }
+        div[data-testid="stImage"] img {
+            height: clamp(calc(140px * var(--tv-zoom)), 42vw, calc(220px * var(--tv-zoom))) !important;
+        }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -185,7 +358,8 @@ if current_time - st.session_state.tv_last_auto_advance >= ADVANCE_THRESHOLD:
 
 current_article = news_data[st.session_state.tv_current_index]
 
-components.html(
+with st.container(key="tv_kbd_wrap"):
+    components.html(
     """
     <script>
     (function() {
@@ -253,7 +427,7 @@ with st.container(key="tv_header_row"):
         )
 
 with st.container(key="tv_panels_row"):
-    insights_col, opportunity_col = st.columns(2)
+    insights_col, opportunity_col = st.columns([11, 9])
     with insights_col:
         ai_summary = current_article.get("ai_summary") or "No summary generated."
         st.markdown(

@@ -5,6 +5,7 @@ import streamlit as st
 from shared import (
     inject_css, render_page_switcher, load_client_alerts, load_client_employee_map, load_employee_name_map,
     parse_tier_highlights, tier_color, get_company_logo_map, company_logo_src,
+    get_alert_source_urls, url_label,
 )
 
 st.set_page_config(page_title="News Radar — Alerts", page_icon="🚀", layout="centered")
@@ -22,6 +23,36 @@ st.markdown("""
     .st-key-alerts_employee_filter_col {
         max-width: 320px;
         margin-bottom: 20px;
+    }
+
+    /* The sources dropdown (shared .source-links styling) normally opens
+       flush with the hover text's left edge, growing rightward — fine for
+       an article title at the left of its row, but this hover text sits at
+       the *right* edge of the right-aligned alert-stats block, so growing
+       rightward would push it off the card and often off the viewport.
+       Anchored to the right edge and growing leftward instead. */
+    .alert-stats .title-hover-wrap .source-links {
+        left: auto;
+        right: 0;
+        /* The shared panel's min-width: 240px is narrower than most pills,
+           so only one fit per line — wrapping still happens for more
+           sources than fit on a row, but rows hold as many pills as there's
+           room for instead of one each. Sized to fit its content up to
+           that cap rather than always claiming the full 240px minimum. */
+        max-width: min(90vw, 420px);
+        min-width: 0;
+        width: max-content;
+    }
+    /* Unlike an article title, this hover text isn't itself a link, so it
+       doesn't get a pointer cursor or hover color for free — added
+       explicitly here so it still reads as interactive, only when it
+       actually has sources to show (an alert with none shouldn't invite a
+       hover that does nothing). */
+    .alert-stats .title-hover-wrap:has(.source-links) {
+        cursor: pointer;
+    }
+    .alert-stats .title-hover-wrap:has(.source-links):hover {
+        color: #3b82f6;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -107,6 +138,21 @@ for rank, alert in enumerate(cards, start=1):
     logo_src = company_logo_src(company_logos.get(client))
     period_label = f"{_fmt_date(alert['period_start'])} – {_fmt_date(alert['period_end'])}"
 
+    # Hovering "N articles" reveals the alert's source links, same
+    # hover-dropdown pattern as an article title elsewhere in the app
+    # (title_with_sources_html) — reusing its .title-hover-wrap/.source-links
+    # CSS directly for a consistent look, just without a wrapping <a> here
+    # since (unlike a title) there's no single URL for this text to link to.
+    source_urls = get_alert_source_urls(alert)
+    sources_html = ""
+    if source_urls:
+        pills = "".join(
+            f'<a href="{u}" target="_blank" title="{u}">🔗 {url_label(u, f"Source {i + 1}")}</a>'
+            for i, u in enumerate(source_urls)
+        )
+        sources_html = f'<div class="source-links">{pills}</div>'
+    articles_stat_html = f'<span class="title-hover-wrap">{alert["article_count"]} articles{sources_html}</span>'
+
     tier_groups = parse_tier_highlights(alert.get("tier_highlights"))
     tier_rank_by_name = {tier: idx for idx, (tier, _) in enumerate(tier_groups)}
 
@@ -160,7 +206,7 @@ for rank, alert in enumerate(cards, start=1):
         f'<span class="alert-client-name">{client}</span>'
         f'</div>'
         f'<div class="alert-stats">'
-        f'<span class="alert-stats-score">Score {alert["total_score"]:g}</span>&nbsp;&nbsp;{alert["article_count"]} articles<br>'
+        f'<span class="alert-stats-score">Score {alert["total_score"]:g}</span>&nbsp;&nbsp;{articles_stat_html}<br>'
         f'{period_label}'
         f'</div>'
         f'</div>'
