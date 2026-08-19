@@ -1204,22 +1204,20 @@ def fetch_client_alerts_from_supabase():
 # recovered by cross-referencing that slug against `news.company` (already
 # fetched, unpseudonymized), matched by stripping both down to the same
 # lowercase-alphanumeric form.
-CLIENT_PSEUDONYM_FILE = Path(__file__).parent / "client_pseudonyms.local.json"
-
-
 def _slugify_company_name(name):
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
 @st.cache_data(ttl=CACHE_TIMEOUT)
 def load_client_pseudonym_map():
-    """Map each pseudonym code to the real company display name. Falls back
-    to the code itself if the mapping file is missing/unreadable, and to the
-    raw slug (upper-cased) if a code's company isn't found in `news` yet."""
-    try:
-        with open(CLIENT_PSEUDONYM_FILE, "r", encoding="utf-8") as f:
-            slug_to_code = json.load(f)
-    except (OSError, json.JSONDecodeError):
+    """Map each pseudonym code to the real company display name. Read from
+    st.secrets (a `[client_pseudonyms]` table, slug -> code) rather than a
+    local file, since a local-only file never reaches the deployed app on
+    Streamlit Community Cloud — secrets configured in the app's dashboard
+    do. Falls back to the raw slug (upper-cased) if a code's company isn't
+    found in `news` yet."""
+    slug_to_code = dict(st.secrets.get("client_pseudonyms", {}))
+    if not slug_to_code:
         return {}
 
     try:
@@ -1254,33 +1252,22 @@ def load_client_alerts():
     return [_decode_client_alert_row(row, pseudonym_map) for row in rows]
 
 
-# Mock local files for now, same pattern as CLIENT_PSEUDONYM_FILE — swap for
-# real tables once client->employee assignment and employee identity live in
-# the database. client_employees maps a pseudonym client_id to the list of
-# employee_ids assigned to that account; employee_names resolves an
-# employee_id to a display name.
-CLIENT_EMPLOYEES_FILE = Path(__file__).parent / "client_employees.local.json"
-EMPLOYEE_NAMES_FILE = Path(__file__).parent / "employee_names.local.json"
-
-
+# Mock data for now, read from st.secrets rather than a local file — swap
+# for real tables once client->employee assignment and employee identity
+# live in the database. client_employees maps a pseudonym client_id to the
+# list of employee_ids assigned to that account; employee_names resolves an
+# employee_id to a display name. See load_client_pseudonym_map's docstring
+# for why secrets rather than a local *.local.json file.
 @st.cache_data(ttl=CACHE_TIMEOUT)
 def load_client_employee_map():
     """Map each pseudonymized client_id to its list of assigned employee_ids."""
-    try:
-        with open(CLIENT_EMPLOYEES_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return {}
+    return {k: list(v) for k, v in st.secrets.get("client_employees", {}).items()}
 
 
 @st.cache_data(ttl=CACHE_TIMEOUT)
 def load_employee_name_map():
     """Map each employee_id to their display name."""
-    try:
-        with open(EMPLOYEE_NAMES_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return {}
+    return dict(st.secrets.get("employee_names", {}))
 
 
 # One representative logo per company, sourced from the `news` table (whose
