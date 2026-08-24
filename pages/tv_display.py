@@ -427,7 +427,7 @@ with st.container(key="tv_header_row"):
         )
 
 with st.container(key="tv_panels_row"):
-    insights_col, opportunity_col = st.columns([11, 9])
+    insights_col, opportunity_col = st.columns([3, 2])
     with insights_col:
         ai_summary = current_article.get("ai_summary") or "No summary generated."
         st.markdown(
