@@ -7,10 +7,38 @@ import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
 
-from shared import inject_css, load_news, format_pub_date, get_article_urls, seargin_logo_data_uri, FALLBACK_IMAGE
+from shared import (
+    inject_css, load_news, format_pub_date, get_article_urls, seargin_logo_data_uri, FALLBACK_IMAGE,
+    parse_career_positions,
+)
 
 SLIDE_SECONDS = 24
 ADVANCE_THRESHOLD = 23.5
+
+
+def _tv_career_table_html(positions):
+    """Position / Type / Location table for a careers row, same content as
+    shared.career_positions_table_html but with this page's own tv-career-*
+    classes (dark-panel styling, sized relative to the panel's own font size
+    instead of shared.py's fixed px scale)."""
+    rows = []
+    for p in positions:
+        title_html = p["title"]
+        if p.get("source"):
+            title_html = f'<a href="{p["source"]}" target="_blank">{title_html}</a>'
+        rows.append(
+            f'<tr><td class="tv-cpt-position">{title_html}</td>'
+            f'<td class="tv-cpt-type">{p["type"]}</td>'
+            f'<td class="tv-cpt-location">{p["location"]}</td></tr>'
+        )
+    return (
+        f'<div class="tv-career-table-wrap">'
+        f'<table class="tv-career-table">'
+        f'<thead><tr><th>Position</th><th>Type</th><th>Location</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        f'</table>'
+        f'</div>'
+    )
 
 st.set_page_config(page_title="Seargin News — TV Display", page_icon="🟢", layout="wide")
 inject_css()
@@ -54,18 +82,39 @@ st.container(key="tv_style_wrap").markdown("""
            different level. */
         --tv-zoom: 0.75;
 
-        --tv-headline-size: clamp(calc(1.4rem * var(--tv-zoom)), calc(1rem * var(--tv-zoom)) + 1.6vw, calc(4.2rem * var(--tv-zoom)));
+        --tv-headline-size: clamp(calc(1.15rem * var(--tv-zoom)), calc(0.8rem * var(--tv-zoom)) + 1.6vw, calc(3.4rem * var(--tv-zoom)));
         --tv-panel-text-size: clamp(calc(0.85rem * var(--tv-zoom)), calc(0.72rem * var(--tv-zoom)) + 0.5vw, calc(1.55rem * var(--tv-zoom)));
         --tv-panel-title-size: clamp(calc(0.72rem * var(--tv-zoom)), calc(0.65rem * var(--tv-zoom)) + 0.25vw, calc(1.2rem * var(--tv-zoom)));
         --tv-date-size: clamp(calc(0.78rem * var(--tv-zoom)), calc(0.68rem * var(--tv-zoom)) + 0.3vw, calc(1.3rem * var(--tv-zoom)));
         --tv-footer-size: clamp(calc(0.65rem * var(--tv-zoom)), calc(0.58rem * var(--tv-zoom)) + 0.2vw, calc(1.05rem * var(--tv-zoom)));
-        --tv-media-h: clamp(calc(96px * var(--tv-zoom)), calc(60px * var(--tv-zoom)) + 9vw, calc(230px * var(--tv-zoom)));
+        --tv-media-h: clamp(calc(46px * var(--tv-zoom)), calc(10px * var(--tv-zoom)) + 9vw, calc(180px * var(--tv-zoom)));
         --tv-pad-x: clamp(calc(16px * var(--tv-zoom)), 4vw, calc(80px * var(--tv-zoom)));
         --tv-pad-top: clamp(calc(16px * var(--tv-zoom)), 2.5vw, calc(40px * var(--tv-zoom)));
         --tv-pad-bottom: clamp(calc(40px * var(--tv-zoom)), 6vw, calc(100px * var(--tv-zoom)));
         --tv-panel-pad: clamp(calc(14px * var(--tv-zoom)), 1.6vw, calc(28px * var(--tv-zoom)));
         --tv-corner-gap: clamp(calc(14px * var(--tv-zoom)), 2.5vw, calc(32px * var(--tv-zoom)));
         --tv-logo-h: clamp(calc(24px * var(--tv-zoom)), 3vw, calc(44px * var(--tv-zoom)));
+        --tv-panels-pad-top: clamp(calc(8px * var(--tv-zoom)), 1.5vw, calc(16px * var(--tv-zoom)));
+        /* How tall the career table is allowed to get before it scrolls
+           internally — computed from the actual layout instead of a flat
+           guess (an earlier version used a flat 42vh, which left a lot of
+           unused space on a wide/short screen where the header row and
+           logo clearance eat a smaller share of the viewport). Subtracts,
+           from 100vh: the header row's own top padding and photo height,
+           the panels row's top padding, the panels row's bottom padding
+           (which is what actually reserves clearance for the fixed
+           logo/counter), the panel's own top+bottom padding, and the
+           INSIGHTS/SEARGIN OPPORTUNITY title's line height + margin —
+           i.e. everything above and around the table that isn't the table
+           itself, plus a small safety margin. */
+        --tv-career-table-max-h: calc(
+            100vh
+            - var(--tv-pad-top) - var(--tv-media-h)
+            - var(--tv-panels-pad-top) - var(--tv-pad-bottom)
+            - (var(--tv-panel-pad) * 2)
+            - (var(--tv-panel-title-size) * 1.3) - calc(12px * var(--tv-zoom))
+            - 8px
+        );
     }
 
     /* Kiosk display — nobody can ever scroll it, so it should never look
@@ -98,7 +147,16 @@ st.container(key="tv_style_wrap").markdown("""
        stretching to the column's full width (same fix as dashboard.py) —
        so width: 100% on the <img> alone was resolving against an
        already-shrunk parent, leaving the image narrower than its column
-       (most visible once the column goes full-row-width on a narrow screen). */
+       (most visible once the column goes full-row-width on a narrow screen).
+       stFullScreenFrame is the outermost of this whole chain and the one
+       whose own box is what's actually visible as the card, so it's the
+       one sized here — every level below it (the unnamed div, stImage,
+       stImageContainer, and the <img> itself) just fills 100% of it, so
+       they all end up the exact same width as the column, with no gap
+       anywhere in the chain. */
+    div[data-testid="stFullScreenFrame"] {
+        width: 100% !important;
+    }
     div[data-testid="stFullScreenFrame"] > div,
     div[data-testid="stImage"],
     div[data-testid="stImageContainer"] {
@@ -107,10 +165,15 @@ st.container(key="tv_style_wrap").markdown("""
     div[data-testid="stImage"] img {
         height: var(--tv-media-h) !important;
         width: 100% !important;
-        /* Photos vary in aspect ratio; cover crops to fill the frame instead
-           of stretching (the default) or letterboxing, which is what a
-           magazine-style news photo wants here. */
-        object-fit: cover !important;
+        /* Was object-fit: cover, appropriate for a news photo — but this
+           feed now also carries careers-table rows, whose image is a
+           company logo (often a wordmark, e.g. Orange's) rather than a
+           photo. cover crops to fill the frame, which for a logo means
+           slicing off part of the actual brand/text instead of just
+           trimming empty photo background. contain never crops (just
+           letterboxes on the white background below when the aspect ratio
+           doesn't match), which is correct for both a logo and a photo. */
+        object-fit: contain !important;
         background-color: #ffffff;
     }
     div[data-testid="stHorizontalBlock"] {
@@ -151,8 +214,17 @@ st.container(key="tv_style_wrap").markdown("""
     .st-key-tv_header_row {
         padding: var(--tv-pad-top) var(--tv-pad-x) 0 var(--tv-pad-x);
     }
+    /* Image column 20px narrower than its normal 1:2 split — flex-grow: 0
+       keeps it pinned at exactly that reduced basis instead of growing
+       back to reclaim the space (flex's default behavior when there's
+       slack to fill); the headline column next to it keeps its own
+       flex-grow: 1 unchanged, so it's the only one left to absorb the
+       freed-up 20px, growing by exactly that much. */
+    .st-key-tv_header_row div[data-testid="stColumn"]:first-child {
+        flex: 0 1 calc(33.3333% - 28px) !important;
+    }
     .st-key-tv_panels_row {
-        padding: clamp(calc(8px * var(--tv-zoom)), 1.5vw, calc(16px * var(--tv-zoom))) var(--tv-pad-x) var(--tv-pad-bottom) var(--tv-pad-x);
+        padding: var(--tv-panels-pad-top) var(--tv-pad-x) var(--tv-pad-bottom) var(--tv-pad-x);
     }
 
     /* Title sits at the top of the column; the date anchors to the
@@ -207,6 +279,86 @@ st.container(key="tv_style_wrap").markdown("""
         color: #e5e7eb;
         font-size: var(--tv-panel-text-size);
         line-height: 1.6;
+    }
+
+    /* Career postings table (in place of the free-text Insights summary for
+       a careers-table row) — same table shown on Client News, restyled for
+       this page's dark panel look. Sized in em relative to the panel's own
+       font-size (rather than a fixed px scale) so it automatically tracks
+       --tv-zoom the same way the rest of the panel text does. */
+    /* Capped instead of letting a long positions list push the whole panel
+       taller — this page can't scroll itself (kiosk display), so an
+       uncapped table risks growing past the fixed logo/slide-counter with
+       no way to see what got clipped. Scrolling within the table itself
+       keeps every position reachable regardless of how long the list is.
+       The header scrolls away with the rows (no position: sticky) — a
+       pinned header needs its own background to hide scrolled-past rows
+       underneath it, and that background inevitably reads as a visibly
+       darker patch layered on top of the card's own translucent one. */
+    .tv-career-table-wrap {
+        overflow-x: auto;
+        overflow-y: auto;
+        max-height: var(--tv-career-table-max-h);
+    }
+    .tv-career-table-wrap::-webkit-scrollbar {
+        width: 6px;
+    }
+    .tv-career-table-wrap::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .tv-career-table-wrap::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.18);
+        border-radius: 3px;
+    }
+    .tv-career-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: var(--tv-panel-text-size);
+    }
+    /* Streamlit's own default table styling (for markdown-rendered tables)
+       puts a 1px border on all four sides of every th/td — left unchecked,
+       that shows through as vertical rule lines between/around columns,
+       since only border-bottom below is an intentional override. Reset to
+       none first so the only borders left are the ones we actually want. */
+    .tv-career-table th, .tv-career-table td {
+        border: none;
+        padding: 0.4em 0.7em;
+        text-align: left;
+        vertical-align: top;
+    }
+    .tv-career-table th:first-child, .tv-career-table td:first-child {
+        padding-left: 0;
+    }
+    .tv-career-table th {
+        color: #9ca3af;
+        font-size: 0.72em;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .tv-career-table td {
+        color: #e5e7eb;
+        font-size: 0.86em;
+        line-height: 1.4;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .tv-career-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+    .tv-career-table td.tv-cpt-position {
+        color: #f9fafb;
+        font-weight: 600;
+    }
+    .tv-career-table td.tv-cpt-position a {
+        color: inherit;
+        text-decoration: none;
+    }
+    .tv-career-table td.tv-cpt-position a:hover {
+        color: #3b82f6;
+    }
+    .tv-career-table td.tv-cpt-type {
+        white-space: nowrap;
     }
 
     /* Streamlit gives every stMarkdownContainer a -16px bottom margin, meant
@@ -298,7 +450,7 @@ st.container(key="tv_style_wrap").markdown("""
             height: auto;
         }
         div[data-testid="stImage"] img {
-            height: clamp(calc(140px * var(--tv-zoom)), 42vw, calc(220px * var(--tv-zoom))) !important;
+            height: clamp(calc(90px * var(--tv-zoom)), 42vw, calc(170px * var(--tv-zoom))) !important;
         }
     }
     </style>
@@ -427,12 +579,17 @@ with st.container(key="tv_header_row"):
         )
 
 with st.container(key="tv_panels_row"):
-    insights_col, opportunity_col = st.columns([3, 2])
+    insights_col, opportunity_col = st.columns([11, 9])
     with insights_col:
-        ai_summary = current_article.get("ai_summary") or "No summary generated."
+        career_positions = parse_career_positions(current_article.get("positions"))
+        if career_positions:
+            insights_body = _tv_career_table_html(career_positions)
+        else:
+            ai_summary = current_article.get("ai_summary") or "No summary generated."
+            insights_body = f'<div class="tv-panel-text">{ai_summary}</div>'
         st.markdown(
             f'<div class="tv-panel tv-panel-insights"><div class="tv-panel-title">INSIGHTS</div>'
-            f'<div class="tv-panel-text">{ai_summary}</div></div>',
+            f'{insights_body}</div>',
             unsafe_allow_html=True,
         )
     with opportunity_col:

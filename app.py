@@ -3,6 +3,7 @@ import streamlit as st
 from shared import (
     inject_css, render_page_switcher, load_all_news, load_news, format_pub_date,
     title_with_sources_html, sort_articles, tier_number, FALLBACK_IMAGE,
+    parse_career_positions, career_positions_table_html,
 )
 
 st.set_page_config(page_title="News Radar", page_icon="🚀", layout="centered")
@@ -190,12 +191,18 @@ for row_idx, article in enumerate(news_data):
             unsafe_allow_html=True
         )
 
-        # Insights and Seargin Opportunity collapsed below the title, each expandable on click
+        # Insights and Seargin Opportunity collapsed below the title, each expandable on click.
+        # A careers-table row carries its per-posting `positions` list — shown
+        # as a Position/Type/Location table instead of the free-text summary.
+        career_positions = parse_career_positions(article.get("positions"))
         with st.expander("Insights"):
-            st.markdown(
-                f"<div class='ai-summary-text'>{article.get('ai_summary') or 'No summary generated.'}</div>",
-                unsafe_allow_html=True
-            )
+            if career_positions:
+                st.markdown(career_positions_table_html(career_positions), unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    f"<div class='ai-summary-text'>{article.get('ai_summary') or 'No summary generated.'}</div>",
+                    unsafe_allow_html=True
+                )
 
         with st.expander("Seargin Opportunity"):
             st.markdown(

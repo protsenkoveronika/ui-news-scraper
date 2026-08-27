@@ -570,6 +570,73 @@ GLOBAL_CSS = """
     }
 
     /* ======================================================================
+       CAREER POSTINGS TABLE: Position/Type/Location, in an article's
+       Insights panel in place of ai_summary when it's a careers-table row
+       ====================================================================== */
+    /* Streamlit's expander content area (stExpanderDetails) has a fixed
+       16px left/right padding of its own — canceled here with a matching
+       negative margin so the table's header rule and row dividers reach
+       the card's actual edges, with the same 16px restored as cell padding
+       instead so the text itself keeps the same inset it had before. */
+    .career-positions-wrap {
+        overflow-x: auto;
+        margin: 0 -16px;
+    }
+    .career-positions-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    /* Streamlit's own default table styling (for markdown-rendered tables)
+       puts a 1px border on all four sides of every th/td — left unchecked,
+       that shows through as vertical rule lines between/around columns,
+       since only border-bottom below is an intentional override. Reset to
+       none first so the only borders left are the ones we actually want. */
+    .career-positions-table th, .career-positions-table td {
+        border: none;
+        padding: 10px 16px;
+        text-align: left;
+        vertical-align: top;
+    }
+    .career-positions-table th {
+        color: #9ca3af;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .career-positions-table td {
+        color: #d1d5db;
+        font-size: 0.88rem;
+        line-height: 1.45;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .career-positions-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+    .career-positions-table td.cpt-position {
+        color: #f3f4f6;
+        font-weight: 600;
+    }
+    .career-positions-table td.cpt-position a {
+        color: inherit;
+        text-decoration: none;
+    }
+    .career-positions-table td.cpt-position a:hover {
+        color: #3b82f6;
+    }
+    .career-positions-table td.cpt-position a {
+        color: inherit;
+        text-decoration: none;
+    }
+    .career-positions-table td.cpt-position a:hover {
+        color: #3b82f6;
+    }
+    .career-positions-table td.cpt-type {
+        white-space: nowrap;
+    }
+
+    /* ======================================================================
        SENTIMENT PAGE: trend chart, legend, industry cards
        ====================================================================== */
     .sentiment-chart-card {
@@ -924,6 +991,29 @@ def init_supabase() -> Client:
     return create_client(url, key)
 
 
+# `careers` holds weekly per-company hiring-digest rows, split out of
+# `news` into their own table — but with the same article-shaped columns
+# (title, company, industry, tier, pub_date, ai_summary, ai_opportunity,
+# related_urls, score, relevance) that every existing article renderer
+# already keys off of, so a careers row can be merged in and treated as an
+# ordinary article everywhere without any changes to that rendering code.
+# Fetched defensively (never st.stop()) since it's a supplementary source
+# layered onto `news` — a `careers`-specific problem (e.g. its SELECT
+# policy not set up yet) shouldn't take down a page that would otherwise
+# still have real `news` articles to show.
+def _merge_articles_by_pub_date(*article_lists):
+    combined = [article for articles in article_lists for article in articles]
+    combined.sort(key=lambda a: a.get("pub_date") or "", reverse=True)
+    return combined
+
+
+def _fetch_careers_safely(query_fn):
+    try:
+        return query_fn()
+    except Exception:
+        return []
+
+
 # Fetch database updates and cache globally for 3 hours
 @st.cache_data(ttl=CACHE_TIMEOUT)
 def fetch_recent_news_from_supabase():
@@ -939,13 +1029,29 @@ def fetch_recent_news_from_supabase():
     return response.data
 
 
+@st.cache_data(ttl=CACHE_TIMEOUT)
+def fetch_recent_careers_from_supabase():
+    supabase = init_supabase()
+    cutoff_timestamp = (datetime.now(timezone.utc) - timedelta(hours=CUTOFF_TIMESPAN)).isoformat()
+    response = (
+        supabase.table("careers")
+        .select("*")
+        .gte("pub_date", cutoff_timestamp)
+        .order("pub_date", desc=True)
+        .execute()
+    )
+    return response.data
+
+
 def load_news():
     """Fetch news, stopping the page with an error message if Supabase fails."""
     try:
-        return fetch_recent_news_from_supabase()
+        news = fetch_recent_news_from_supabase()
     except Exception as e:
         st.error(f"Supabase connection failed: {e}")
         st.stop()
+    careers = _fetch_careers_safely(fetch_recent_careers_from_supabase)
+    return _merge_articles_by_pub_date(news, careers)
 
 
 # Every article ever recorded, no date filter — the "All time" option
@@ -962,14 +1068,28 @@ def fetch_all_news_from_supabase():
     return response.data
 
 
+@st.cache_data(ttl=CACHE_TIMEOUT)
+def fetch_all_careers_from_supabase():
+    supabase = init_supabase()
+    response = (
+        supabase.table("careers")
+        .select("*")
+        .order("pub_date", desc=True)
+        .execute()
+    )
+    return response.data
+
+
 def load_all_news():
     """Fetch every recorded article, stopping the page with an error message
     if Supabase fails."""
     try:
-        return fetch_all_news_from_supabase()
+        news = fetch_all_news_from_supabase()
     except Exception as e:
         st.error(f"Supabase connection failed: {e}")
         st.stop()
+    careers = _fetch_careers_safely(fetch_all_careers_from_supabase)
+    return _merge_articles_by_pub_date(news, careers)
 
 
 # Same CUTOFF_TIMESPAN / all-time pair as `news`, for the `sector_news` table
@@ -1037,23 +1157,46 @@ def fetch_week_news_from_supabase():
     return response.data
 
 
+@st.cache_data(ttl=CACHE_TIMEOUT)
+def fetch_week_careers_from_supabase():
+    supabase = init_supabase()
+    now = datetime.now(timezone.utc)
+    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    response = (
+        supabase.table("careers")
+        .select("*")
+        .gte("pub_date", week_start.isoformat())
+        .order("pub_date", desc=True)
+        .execute()
+    )
+    return response.data
+
+
 def load_week_news():
     """Fetch this week's news, stopping the page with an error message if Supabase fails."""
     try:
-        return fetch_week_news_from_supabase()
+        news = fetch_week_news_from_supabase()
     except Exception as e:
         st.error(f"Supabase connection failed: {e}")
         st.stop()
+    careers = _fetch_careers_safely(fetch_week_careers_from_supabase)
+    return _merge_articles_by_pub_date(news, careers)
 
 
-# Every distinct company ever recorded in `news` (no date filter) — used so
-# the Weekly Scores tables list every tracked company, including ones with
-# zero articles (and therefore zero score) in the period being shown.
+# Every distinct company ever recorded in `news` or `careers` (no date
+# filter) — used so the Weekly Scores tables list every tracked company,
+# including ones with zero articles (and therefore zero score) in the
+# period being shown.
 @st.cache_data(ttl=CACHE_TIMEOUT)
 def fetch_all_companies_from_supabase():
     supabase = init_supabase()
     response = supabase.table("news").select("company").execute()
     companies = {row.get("company") for row in response.data if row.get("company")}
+    try:
+        careers_response = supabase.table("careers").select("company").execute()
+        companies |= {row.get("company") for row in careers_response.data if row.get("company")}
+    except Exception:
+        pass
     return sorted(companies)
 
 
@@ -1083,13 +1226,30 @@ def fetch_last_7_days_news_from_supabase():
     return response.data
 
 
+@st.cache_data(ttl=CACHE_TIMEOUT)
+def fetch_last_7_days_careers_from_supabase():
+    supabase = init_supabase()
+    now = datetime.now(timezone.utc)
+    window_start = (now - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
+    response = (
+        supabase.table("careers")
+        .select("*")
+        .gte("pub_date", window_start.isoformat())
+        .order("pub_date", desc=True)
+        .execute()
+    )
+    return response.data
+
+
 def load_last_7_days_news():
     """Fetch the rolling last-7-days news, stopping the page with an error message if Supabase fails."""
     try:
-        return fetch_last_7_days_news_from_supabase()
+        news = fetch_last_7_days_news_from_supabase()
     except Exception as e:
         st.error(f"Supabase connection failed: {e}")
         st.stop()
+    careers = _fetch_careers_safely(fetch_last_7_days_careers_from_supabase)
+    return _merge_articles_by_pub_date(news, careers)
 
 
 # Fetch every recorded weekly industry-sentiment digest, oldest first (so
@@ -1350,6 +1510,60 @@ def parse_tier_highlights(raw):
         if normalized:
             result.append((tier, normalized))
     return result
+
+
+def parse_career_positions(raw):
+    """Normalize the `positions` jsonb column (careers table) — a list of
+    {title, type, location, source} objects, one per kept posting — into a
+    list of plain dicts, tolerating a JSON-encoded string and skipping any
+    entry without a title."""
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(items, list):
+        return []
+
+    positions = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        title = item.get("title")
+        if not title:
+            continue
+        positions.append({
+            "title": title,
+            "type": item.get("type") or "",
+            "location": item.get("location") or "",
+            "source": item.get("source"),
+        })
+    return positions
+
+
+def career_positions_table_html(positions):
+    """Position / Type / Location table for a careers row's parsed
+    `positions` list, in place of the free-text ai_summary — each posting's
+    title links out to its source when one is recorded."""
+    rows = []
+    for p in positions:
+        title_html = p["title"]
+        if p.get("source"):
+            title_html = f'<a href="{p["source"]}" target="_blank">{title_html}</a>'
+        rows.append(
+            f'<tr><td class="cpt-position">{title_html}</td>'
+            f'<td class="cpt-type">{p["type"]}</td>'
+            f'<td class="cpt-location">{p["location"]}</td></tr>'
+        )
+    return (
+        f'<div class="career-positions-wrap">'
+        f'<table class="career-positions-table">'
+        f'<thead><tr><th>Position</th><th>Type</th><th>Location</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        f'</table>'
+        f'</div>'
+    )
 
 
 def _parse_url_list(raw):
