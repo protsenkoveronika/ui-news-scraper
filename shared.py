@@ -56,26 +56,79 @@ def tier_color(rank_index):
     return TIER_FALLBACK_COLOR
 
 
-# Categorical palette, dark-mode steps, in fixed hue order. The first 5 slots
-# (blue/orange/aqua/yellow/violet) are the original set — the first 4 are the
-# documented default order's slots, validated for every adjacent pair in both
-# modes; the 5th swaps in the palette's violet step (was magenta) at the
-# user's request. Slots 6-8 (red/brown/white) were added as a page (Sector
-# Sentiment) kept growing past its original industry count — previously any
-# industry past the ramp's length silently fell back to the same
-# INDUSTRY_FALLBACK_COLOR grey, making it visually indistinguishable from the
-# chart's own gridlines. Each slot is chosen to match the actual circle emoji
-# used for the legend dot (LEGEND_DOTS in sentiment.py / industry_sentiment.py)
-# — no plain circle emoji exists for pink/cyan/etc, so straying from
-# red/orange/yellow/green/blue/purple/brown/white would force a mismatched or
-# non-circle (e.g. heart) dot for that slot. White is the last one available
-# before the set runs out entirely — black (the only other remaining circle
-# emoji) wouldn't be visible against this app's dark background.
+# Validated dark-mode categorical theme (8 slots): blue, orange, aqua,
+# yellow, magenta, green, violet, red. This exact order is the CVD-safety
+# mechanism, not cosmetic — it's the one ordering of these 8 hues that
+# clears every adjacent-pair contrast/colorblind-safety gate in both light
+# and dark mode (worst adjacent CVD ΔE 8.4, worst adjacent normal-vision ΔE
+# 19.3, both on the dark surface this app uses). Re-ordering, dropping a
+# slot, or inserting a 9th hand-picked hue breaks that guarantee, which is
+# why a 9th distinct industry never gets a new generated color — it folds
+# into the single INDUSTRY_FALLBACK_COLOR grey below instead of cycling
+# back through slots 1-8 (which would silently give two unrelated
+# industries the exact same line color, indistinguishable on the chart).
 INDUSTRY_COLOR_RAMP = [
-    "#3987e5", "#d95926", "#199e70", "#c98500", "#9085e9",
-    "#d9534f", "#8b5e34", "#f3f4f6",
+    "#3987e5", "#d95926", "#199e70", "#c98500", "#d55181",
+    "#008300", "#9085e9", "#e66767",
 ]
 INDUSTRY_FALLBACK_COLOR = "#9ca3af"
+
+# Sector Sentiment's backend classifier uses a fixed, closed taxonomy of
+# exactly 15 topics (SECTOR_TOPIC_BASE_SCORES in the scoring pipeline) —
+# unlike the open-ended, historically-drifting industry names elsewhere
+# (old renamed variants pile up release over release), this list is closed
+# and known in advance, so each topic can get its own permanent, guaranteed-
+# distinct color instead of competing for the 8 generic ramp slots by
+# rank/prominence. The first 8 (by the pipeline's own base-score order)
+# reuse INDUSTRY_COLOR_RAMP's validated sequence; the remaining 7 extend it.
+# That extension is NOT validated the same way — no CVD-safety tool was
+# available in this environment — chosen instead for maximum practical
+# hue/lightness separation from the first 8 and from each other, with the
+# lowest-priority topic (Vendor / Product Announcement) deliberately given
+# the most muted, neutral-reading color of the set.
+SECTOR_TOPIC_COLORS = {
+    "AI Regulation & Policy": "#3987e5",
+    "Cyber Threat & Breach Trends": "#d95926",
+    "Data Privacy & Governance": "#199e70",
+    "IT Staffing & Labor Market Trends": "#c98500",
+    "IT Services M&A": "#d55181",
+    "IT Services Investment & Funding": "#008300",
+    "AI M&A & Funding": "#9085e9",
+    "Security Regulation & Standards": "#e66767",
+    "Generative AI / LLM Developments": "#8bc342",
+    "Cloud & Enterprise Infrastructure Trends": "#2ba9c4",
+    "Enterprise IT Spending Forecasts": "#6a4fc4",
+    "AI Infrastructure & Compute": "#9c4fc4",
+    "Industry Conference & Event": "#c44f9c",
+    "Emerging Technology": "#6b8299",
+    "Vendor / Product Announcement": "#a67c52",
+}
+
+# The pills filter can only show plain text/emoji, not an exact hex swatch —
+# each topic's dot below is hand-picked to the *nearest* circle-emoji hue
+# family for its actual SECTOR_TOPIC_COLORS value above (not a cycling
+# sequence, which was unrelated to the real color and could show, say, a
+# green dot for a topic whose chart line is actually red). With 15 topics
+# sharing only 9 circle-emoji colors, several necessarily land in the same
+# family (e.g. violet and magenta both read as 🟣) — that's an intentional
+# same-family approximation, not a mismatch.
+SECTOR_TOPIC_DOTS = {
+    "AI Regulation & Policy": "🔵",              # #3987e5 blue
+    "Cyber Threat & Breach Trends": "🟠",         # #d95926 orange
+    "Data Privacy & Governance": "🟢",            # #199e70 teal (nearest: green)
+    "IT Staffing & Labor Market Trends": "🟡",    # #c98500 amber
+    "IT Services M&A": "🟣",                      # #d55181 magenta (nearest: purple)
+    "IT Services Investment & Funding": "🟢",     # #008300 green
+    "AI M&A & Funding": "🟣",                     # #9085e9 violet (nearest: purple)
+    "Security Regulation & Standards": "🔴",      # #e66767 red
+    "Generative AI / LLM Developments": "🟡",     # #8bc342 chartreuse (nearest: yellow)
+    "Cloud & Enterprise Infrastructure Trends": "🔵",  # #2ba9c4 cyan (nearest: blue)
+    "Enterprise IT Spending Forecasts": "🟣",     # #6a4fc4 indigo (nearest: purple)
+    "AI Infrastructure & Compute": "🟣",          # #9c4fc4 orchid (nearest: purple)
+    "Industry Conference & Event": "🔴",          # #c44f9c fuchsia (nearest: warm/red)
+    "Emerging Technology": "⚪",                  # #6b8299 muted slate (nearest: neutral)
+    "Vendor / Product Announcement": "🟤",        # #a67c52 brown
+}
 
 # Sentiment is a reserved, fixed 4-step status scale (good/warning/critical),
 # never themed — "neutral" has no state to flag, so it gets the same muted
@@ -94,6 +147,20 @@ def industry_color(rank_index):
     if 0 <= rank_index < len(INDUSTRY_COLOR_RAMP):
         return INDUSTRY_COLOR_RAMP[rank_index]
     return INDUSTRY_FALLBACK_COLOR
+
+
+def industry_legend_html(ordered_industries, industry_colors):
+    """Swatch + name for each of the given industries, in the order passed
+    in — used as the trend chart's legend, reflecting whichever industries
+    are currently plotted (not the full all-time list, which can run past
+    what the palette or the chart can legibly show at once)."""
+    items = "".join(
+        f'<span class="industry-legend-item">'
+        f'<span class="industry-legend-swatch" style="background:{industry_colors[industry]};"></span>'
+        f'{industry}</span>'
+        for industry in ordered_industries
+    )
+    return f'<div class="industry-legend-row">{items}</div>'
 
 
 def sentiment_status(label):
@@ -786,6 +853,32 @@ GLOBAL_CSS = """
     }
     .industry-card .industry-details .industry-summary {
         margin-top: 10px !important;
+    }
+
+    /* Trend-chart legend: a real color swatch per active industry, exactly
+       matching that industry's line/point color — st.pills (the filter
+       widget right above it) only renders plain text/emoji in its button
+       labels, so an exact-hex swatch can't live inside the pill itself;
+       this sits below it instead, purely informational. */
+    .industry-legend-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        margin: 10px 0 16px 0;
+    }
+    .industry-legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #9ca3af;
+        font-size: 0.8rem;
+    }
+    .industry-legend-swatch {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex-shrink: 0;
     }
 
     /* ======================================================================

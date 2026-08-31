@@ -5,6 +5,7 @@ import streamlit as st
 from shared import (
     inject_css, render_page_switcher, load_news, format_pub_date, title_with_sources_html,
     sort_articles, tier_number, tier_color, FALLBACK_IMAGE,
+    parse_career_positions, career_positions_table_html,
 )
 
 st.set_page_config(page_title="News Radar — Dashboard", page_icon="🚀", layout="centered")
@@ -202,6 +203,11 @@ for row_start in range(0, len(filtered_data), CARD_COLUMNS):
             relevance_badge = f' <span class="tier-badge" style="margin-left:10px;">RELEVANCE {relevance}</span>' if relevance is not None else ""
             summary_preview = article.get("ai_summary") or "No summary generated."
 
+            # A careers-table row carries its per-posting `positions` list — shown
+            # as a Position/Type/Location table instead of the free-text summary,
+            # same as the Client News and TV Display pages.
+            career_positions = parse_career_positions(article.get("positions"))
+
             st.markdown(
                 f'<div class="dashboard-card">'
                 f"<p style='color: #9ca3af; font-size: 0.75rem; margin: 0 0 4px 0;'>"
@@ -214,6 +220,9 @@ for row_start in range(0, len(filtered_data), CARD_COLUMNS):
 
             with st.popover("Details", use_container_width=True):
                 st.markdown("**Insights**")
-                st.markdown(article.get("ai_summary") or "No summary generated.")
+                if career_positions:
+                    st.markdown(career_positions_table_html(career_positions), unsafe_allow_html=True)
+                else:
+                    st.markdown(article.get("ai_summary") or "No summary generated.")
                 st.markdown("**Seargin Opportunity**")
                 st.markdown(article.get("ai_opportunity") or "No opportunity analysis generated.")

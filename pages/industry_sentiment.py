@@ -4,7 +4,7 @@ import streamlit as st
 
 from shared import (
     inject_css, render_page_switcher, load_industry_sentiment_weekly, parse_highlights, parse_trends,
-    industry_color, sentiment_status, sentiment_badge_html,
+    sentiment_status, sentiment_badge_html, SECTOR_TOPIC_COLORS,
 )
 
 st.set_page_config(page_title="News Radar — Sector Sentiment", page_icon="🚀", layout="centered")
@@ -41,12 +41,34 @@ st.markdown("""
         color: #f3f4f6 !important;
         opacity: 1;
     }
+    /* Per-pill color swatch — a real, exact-hex dot rather than an
+       approximate emoji, since st.pills only accepts text/emoji in its own
+       label API. This styles the actual rendered <button> directly instead
+       (unified shape/size here; each button's own color comes from a
+       separate nth-of-type rule generated below, one per topic, keyed to
+       the same fixed order the pills are drawn in). */
+    div[data-testid="stButtonGroup"] button[data-variant="pills"]::before {
+        content: "";
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 6px;
+        vertical-align: middle;
+        flex-shrink: 0;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("Sector Sentiment")
 
 digest = load_industry_sentiment_weekly()
+
+# Only the backend's fixed 15-topic taxonomy (SECTOR_TOPIC_COLORS) — older
+# industry names from before that taxonomy existed are dropped entirely
+# rather than kept around under a fallback color, so this page only ever
+# shows/plots/filters the current topic set.
+digest = [row for row in digest if row["industry"] in SECTOR_TOPIC_COLORS]
 
 if not digest:
     st.info(
@@ -72,7 +94,11 @@ def _fmt_date_full(d):
 
 
 industries = sorted({row["industry"] for row in digest})
-industry_colors = {industry: industry_color(i) for i, industry in enumerate(industries)}
+
+# Every remaining industry is one of the fixed taxonomy's 15 topics (the
+# rest were dropped above), so each one always has its own permanent,
+# guaranteed-distinct color — no rank/fallback logic needed.
+industry_colors = {industry: SECTOR_TOPIC_COLORS[industry] for industry in industries}
 
 weeks = sorted({row["week_start"] for row in digest})
 by_industry_week = {(row["industry"], row["week_start"]): row for row in digest}
@@ -177,6 +203,11 @@ PAD_LEFT, PAD_RIGHT, PAD_TOP, PAD_BOTTOM = 46, 40, 16, 32
 plot_w = CHART_W - PAD_LEFT - PAD_RIGHT
 plot_h = CHART_H - PAD_TOP - PAD_BOTTOM
 
+# Cap the chart to the 8 most recent weeks — older weeks stay pickable in the
+# week dropdown above, they just don't clutter the trend line with more dots
+# than the axis can label cleanly.
+weeks = weeks[-8:]
+
 
 def x_for(week_index):
     if len(weeks) == 1:
@@ -217,18 +248,25 @@ for i, w in enumerate(weeks):
 # events on foreign <input> elements injected via unsafe_allow_html, so a
 # pure-CSS/HTML toggle can't be made reliably interactive here — a real widget
 # sidesteps that entirely.
-# Dots match INDUSTRY_COLOR_RAMP's actual hex values (also used for the card
-# border and chart line/point colors below), so the legend agrees with the
-# colors it's meant to key.
-LEGEND_DOTS = ["🔵", "🟠", "🟢", "🟡", "🟣", "🔴", "🟤", "⚪"]
-dot_for_industry = {industry: LEGEND_DOTS[idx % len(LEGEND_DOTS)] for idx, industry in enumerate(industries)}
+#
+# Each pill's color swatch (the ::before dot styled above) is its topic's
+# *exact* SECTOR_TOPIC_COLORS hex, not an emoji approximation — st.pills'
+# own label only accepts plain text/emoji, but the rendered <button> is a
+# real DOM element addressable by CSS, so it can be styled directly. Pills
+# render in the same fixed order as `industries`, so :nth-of-type(i+1) here
+# lines up with industries[i] one-to-one.
+pill_dot_rules = "\n".join(
+    f'div[data-testid="stButtonGroup"] button[data-variant="pills"]:nth-of-type({i + 1})::before '
+    f'{{ background-color: {industry_colors[industry]}; }}'
+    for i, industry in enumerate(industries)
+)
+st.markdown(f"<style>{pill_dot_rules}</style>", unsafe_allow_html=True)
 
 selected_industries = st.pills(
     "Filter industries",
     options=industries,
     selection_mode="multi",
     default=industries,
-    format_func=lambda industry: f"{dot_for_industry[industry]} {industry}",
     key="isw_industry_filter",
     label_visibility="collapsed",
 )

@@ -90,7 +90,7 @@ st.container(key="tv_style_wrap").markdown("""
         --tv-media-h: clamp(calc(46px * var(--tv-zoom)), calc(10px * var(--tv-zoom)) + 9vw, calc(180px * var(--tv-zoom)));
         --tv-pad-x: clamp(calc(16px * var(--tv-zoom)), 4vw, calc(80px * var(--tv-zoom)));
         --tv-pad-top: clamp(calc(16px * var(--tv-zoom)), 2.5vw, calc(40px * var(--tv-zoom)));
-        --tv-pad-bottom: clamp(calc(40px * var(--tv-zoom)), 6vw, calc(100px * var(--tv-zoom)));
+        --tv-pad-bottom: clamp(calc(60px * var(--tv-zoom)), 8vw, calc(120px * var(--tv-zoom)));
         --tv-panel-pad: clamp(calc(14px * var(--tv-zoom)), 1.6vw, calc(28px * var(--tv-zoom)));
         --tv-corner-gap: clamp(calc(14px * var(--tv-zoom)), 2.5vw, calc(32px * var(--tv-zoom)));
         --tv-logo-h: clamp(calc(24px * var(--tv-zoom)), 3vw, calc(44px * var(--tv-zoom)));
@@ -106,14 +106,14 @@ st.container(key="tv_style_wrap").markdown("""
            logo/counter), the panel's own top+bottom padding, and the
            INSIGHTS/SEARGIN OPPORTUNITY title's line height + margin —
            i.e. everything above and around the table that isn't the table
-           itself, plus a small safety margin. */
+           itself, plus a safety margin to guarantee clearing the bottom logo. */
         --tv-career-table-max-h: calc(
             100vh
             - var(--tv-pad-top) - var(--tv-media-h)
             - var(--tv-panels-pad-top) - var(--tv-pad-bottom)
             - (var(--tv-panel-pad) * 2)
             - (var(--tv-panel-title-size) * 1.3) - calc(12px * var(--tv-zoom))
-            - 8px
+            - 40px
         );
     }
 
@@ -263,7 +263,14 @@ st.container(key="tv_style_wrap").markdown("""
         border: 1px solid rgba(255, 255, 255, 0.06);
         border-radius: calc(12px * var(--tv-zoom));
         padding: var(--tv-panel-pad);
-        height: 100%;
+        box-sizing: border-box;
+        max-height: calc(
+            100vh
+            - var(--tv-pad-top) - var(--tv-media-h)
+            - var(--tv-panels-pad-top) - var(--tv-pad-bottom)
+        );
+        display: flex;
+        flex-direction: column;
     }
     .tv-panel-insights { border-left: 4px solid #3b82f6; }
     .tv-panel-opportunity { border-left: 4px solid #34d399; }
@@ -272,6 +279,7 @@ st.container(key="tv_style_wrap").markdown("""
         font-weight: 700;
         letter-spacing: 0.04em;
         margin-bottom: calc(12px * var(--tv-zoom));
+        flex-shrink: 0;
     }
     .tv-panel-insights .tv-panel-title { color: #60a5fa; }
     .tv-panel-opportunity .tv-panel-title { color: #34d399; }
@@ -279,6 +287,7 @@ st.container(key="tv_style_wrap").markdown("""
         color: #e5e7eb;
         font-size: var(--tv-panel-text-size);
         line-height: 1.6;
+        overflow-y: auto;
     }
 
     /* Career postings table (in place of the free-text Insights summary for
@@ -299,6 +308,7 @@ st.container(key="tv_style_wrap").markdown("""
         overflow-x: auto;
         overflow-y: auto;
         max-height: var(--tv-career-table-max-h);
+        flex-grow: 1;
     }
     .tv-career-table-wrap::-webkit-scrollbar {
         width: 6px;
@@ -448,6 +458,7 @@ st.container(key="tv_style_wrap").markdown("""
                separation. Auto height here lets each card size to its own
                content so the row's real gap shows between them. */
             height: auto;
+            max-height: none;
         }
         div[data-testid="stImage"] img {
             height: clamp(calc(90px * var(--tv-zoom)), 42vw, calc(170px * var(--tv-zoom))) !important;

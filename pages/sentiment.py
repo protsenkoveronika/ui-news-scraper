@@ -4,7 +4,7 @@ import streamlit as st
 
 from shared import (
     inject_css, render_page_switcher, load_industry_digest, parse_highlights, parse_trends,
-    industry_color, sentiment_status, sentiment_badge_html,
+    industry_color, industry_legend_html, sentiment_status, sentiment_badge_html, INDUSTRY_COLOR_RAMP,
 )
 
 st.set_page_config(page_title="News Radar — Sentiment", page_icon="🚀", layout="centered")
@@ -72,7 +72,20 @@ def _fmt_date_full(d):
 
 
 industries = sorted({row["industry"] for row in digest})
-industry_colors = {industry: industry_color(i) for i, industry in enumerate(industries)}
+
+# Colors are assigned by all-time article volume, not alphabetical position:
+# an industry's assigned color must stay stable across reruns/weeks (color
+# follows the entity, not its rank in whatever's currently selected), and
+# with more industries all-time than the palette has slots for, ranking by
+# actual prominence is far more likely to give the industries people
+# actually look at (and default-select, by this week's volume) a real
+# color instead of alphabetical luck deciding it for them.
+total_articles_by_industry = {}
+for row in digest:
+    industry = row["industry"]
+    total_articles_by_industry[industry] = total_articles_by_industry.get(industry, 0) + (row.get("article_count") or 0)
+industries_by_prominence = sorted(industries, key=lambda i: -total_articles_by_industry[i])
+industry_colors = {industry: industry_color(i) for i, industry in enumerate(industries_by_prominence)}
 
 weeks = sorted({row["week_start"] for row in digest})
 by_industry_week = {(row["industry"], row["week_start"]): row for row in digest}
@@ -211,28 +224,43 @@ for i, w in enumerate(weeks):
             f'<text x="{x_for(i)}" y="{CHART_H - PAD_BOTTOM + 18}" text-anchor="middle" class="chart-axis-label">{_fmt_date(week_end_by_start[w])}</text>'
         )
 
-# Legend doubles as a filter — st.pills, a real Streamlit widget that renders
-# as clickable pill buttons (much closer to an actual legend than checkboxes).
-# st.markdown strips <script> tags and Streamlit's own frontend swallows click
-# events on foreign <input> elements injected via unsafe_allow_html, so a
-# pure-CSS/HTML toggle can't be made reliably interactive here — a real widget
-# sidesteps that entirely.
-# Dots match INDUSTRY_COLOR_RAMP's actual hex values (also used for the card
-# border and chart line/point colors below), so the legend agrees with the
-# colors it's meant to key.
-LEGEND_DOTS = ["🔵", "🟠", "🟢", "🟡", "🟣", "🔴", "🟤", "⚪"]
-dot_for_industry = {industry: LEGEND_DOTS[idx % len(LEGEND_DOTS)] for idx, industry in enumerate(industries)}
+# Filter widget — st.pills, a real Streamlit widget that renders as
+# clickable pill buttons. st.markdown strips <script> tags and Streamlit's
+# own frontend swallows click events on foreign <input> elements injected
+# via unsafe_allow_html, so a pure-CSS/HTML toggle can't be made reliably
+# interactive here — a real widget sidesteps that entirely. Its labels are
+# plain text rather than a color-matched dot: st.pills can't render
+# arbitrary HTML, only text/emoji, and with potentially many more
+# industries than the 8-color palette has slots for, an emoji "dot" per
+# industry couldn't stay uniquely color-matched anyway — the real swatch
+# legend below (industry_legend_html) carries color identity instead.
+#
+# Defaults to only the top DEFAULT_ACTIVE_CAP industries, not every
+# industry ever seen: the categorical palette is only validated for up to
+# 8 simultaneous series (see INDUSTRY_COLOR_RAMP) — defaulting to all of
+# them, once there are more industries than that, is what made the chart
+# unreadable (colors repeating across unrelated lines). Users can still add
+# more manually; the cap is just the default. Same all-time-prominence
+# ranking as the color assignment above (not this week's article count) so
+# the default view is exactly the industries that got a real color — never
+# a line that's default-shown but falls back grey.
+DEFAULT_ACTIVE_CAP = len(INDUSTRY_COLOR_RAMP)
+default_industries = industries_by_prominence[:DEFAULT_ACTIVE_CAP]
 
 selected_industries = st.pills(
     "Filter industries",
     options=industries,
     selection_mode="multi",
-    default=industries,
-    format_func=lambda industry: f"{dot_for_industry[industry]} {industry}",
+    default=default_industries,
     key="sentiment_industry_filter",
     label_visibility="collapsed",
 )
 active_industries = set(selected_industries or [])
+
+st.markdown(
+    industry_legend_html([i for i in industries if i in active_industries], industry_colors),
+    unsafe_allow_html=True,
+)
 
 # One polyline + points per active industry (skipping weeks where that industry has no row)
 for industry in industries:
