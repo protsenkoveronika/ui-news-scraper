@@ -190,6 +190,11 @@ PAD_LEFT, PAD_RIGHT, PAD_TOP, PAD_BOTTOM = 46, 40, 16, 32
 plot_w = CHART_W - PAD_LEFT - PAD_RIGHT
 plot_h = CHART_H - PAD_TOP - PAD_BOTTOM
 
+# Cap the chart to the 8 most recent weeks — older weeks stay pickable in the
+# week dropdown above, they just don't clutter the trend line with more dots
+# than the axis can label cleanly.
+weeks = weeks[-8:]
+
 
 def x_for(week_index):
     if len(weeks) == 1:

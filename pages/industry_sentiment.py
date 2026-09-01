@@ -262,11 +262,28 @@ pill_dot_rules = "\n".join(
 )
 st.markdown(f"<style>{pill_dot_rules}</style>", unsafe_allow_html=True)
 
+# With all 15 topics active the chart reads as a tangle. Default to one
+# representative per broad theme (regulation, threats, privacy, labor,
+# deals, AI product, infrastructure, spend) — the highest-signal topic in
+# each cluster — so the default view is readable; every topic stays a
+# click away via the pill itself.
+DEFAULT_ACTIVE_TOPICS = {
+    "AI Regulation & Policy",
+    "Cyber Threat & Breach Trends",
+    "Data Privacy & Governance",
+    "IT Staffing & Labor Market Trends",
+    "IT Services M&A",
+    "Generative AI / LLM Developments",
+    "Cloud & Enterprise Infrastructure Trends",
+    "Enterprise IT Spending Forecasts",
+}
+default_industries = [i for i in industries if i in DEFAULT_ACTIVE_TOPICS]
+
 selected_industries = st.pills(
     "Filter industries",
     options=industries,
     selection_mode="multi",
-    default=industries,
+    default=default_industries,
     key="isw_industry_filter",
     label_visibility="collapsed",
 )
