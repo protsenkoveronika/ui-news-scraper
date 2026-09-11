@@ -9,7 +9,7 @@ A multi-page Streamlit app for monitoring company/sector news, tracking sentimen
 - **Sector News** (`pages/sector_news.py`) — same list/filter/sort UI as Client News, for industry-wide (non-company) news items.
 - **Alerts** (`pages/client_alerts.py`) — ranked feed of per-client alerts (highest total score first), with an employee filter.
 - **Client Industry Sentiment** (`pages/sentiment.py`) — weekly sentiment score cards per industry (colored by all-time article volume, with a matching swatch legend), plus an SVG trend chart whose pill filter defaults to the top 8 most-covered industries.
-- **Sector Sentiment** (`pages/industry_sentiment.py`) — the same weekly-card/trend-chart layout, scoped to a fixed 15-topic sector taxonomy (e.g. AI Regulation & Policy, Cyber Threat & Breach Trends), each topic with its own permanent color.
+- **Sector Sentiment** (`pages/industry_sentiment.py`) — the same weekly-card/trend-chart layout, scoped to a fixed 15-topic sector taxonomy (e.g. AI Regulation & Policy, Cyber Threat & Breach Trends), each topic with its own permanent color; the chart defaults to one representative topic per theme (8 of the 15) to stay readable, with every topic a click away via its pill.
 - **Weekly Scores** (`pages/weekly_scores.py`) — company × weekday score matrices, for the current calendar week and the rolling last 7 days.
 - **TV Display** (`pages/tv_display.py`) — unattended kiosk slideshow for an office TV, including the careers table for job-posting rows. Not linked from the nav menu; reach it by pointing the TV's browser directly at `/tv_display`.
 
@@ -68,8 +68,18 @@ pages/
     industry_sentiment.py           # Sector Sentiment
     weekly_scores.py                # Weekly Scores
     tv_display.py                   # TV kiosk slideshow (not in nav)
+scripts/
+    monitor_ram.py                 # Dev tool: polls a running process's RAM usage (see below)
 assets/                          # Local company logo/images
 *.local.json                     # Gitignored client/employee mapping files (see Setup)
 .streamlit/secrets-example.toml  # Template for required secrets
 requirements.txt                 # Python dependencies
 ```
+
+## Dev Tools
+
+- `scripts/monitor_ram.py` — polls a running process's RAM (RSS) usage and reports current/peak/average, useful for checking the app's memory footprint locally. Matches by process name (defaults to `streamlit`) or an explicit `--pid`. Requires `psutil` (not in `requirements.txt`, since it's a standalone dev utility, not an app dependency) — install with `pip install psutil`, then run:
+
+  ```bash
+  python scripts/monitor_ram.py
+  ```
