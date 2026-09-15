@@ -590,7 +590,7 @@ with st.container(key="tv_header_row"):
         )
 
 with st.container(key="tv_panels_row"):
-    insights_col, opportunity_col = st.columns([11, 9])
+    insights_col, opportunity_col = st.columns(2)
     with insights_col:
         career_positions = parse_career_positions(current_article.get("positions"))
         if career_positions:
